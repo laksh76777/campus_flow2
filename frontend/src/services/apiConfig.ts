@@ -1,0 +1,25 @@
+const isProduction = Boolean(import.meta.env.PROD);
+
+const getResolvedBaseUrl = (): string => {
+  const envUrl = (import.meta.env.VITE_API_URL || "").trim().replace(/\/+$/, "");
+  
+  if (!isProduction) {
+    if (!envUrl || envUrl.includes("onrender.com") || envUrl.includes("localhost:8000") || envUrl.includes("127.0.0.1:8000")) {
+      return "http://localhost:8000/api/v1";
+    }
+  }
+
+  if (!envUrl) return "http://localhost:8000/api/v1";
+  if (envUrl.endsWith("/api/v1")) return envUrl;
+  if (envUrl.endsWith("/api")) return `${envUrl}/v1`;
+  return `${envUrl}/api/v1`;
+};
+
+export const API_BASE_URL: string = getResolvedBaseUrl();
+
+const isLocalhostUrl = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(\/.*)?$/i.test(API_BASE_URL);
+
+export const API_CONFIGURATION_ERROR: string | null =
+  isProduction && (!API_BASE_URL || isLocalhostUrl)
+    ? "Production configuration error: VITE_API_URL environment variable is required and must point to your deployed backend (e.g., https://your-backend.onrender.com/api/v1)."
+    : null;
