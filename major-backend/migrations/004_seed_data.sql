@@ -172,10 +172,11 @@ INSERT INTO placement_drives (
     minimum_cgpa,
     maximum_backlogs,
     graduation_year,
+    application_start_date,
     application_deadline,
     drive_date,
     is_active,
-    status
+    created_by
 )
 VALUES
     (
@@ -191,10 +192,11 @@ VALUES
         7.50,
         0,
         2026,
+        now(),
         now() + interval '14 days',
         now() + interval '21 days',
         true,
-        'ACTIVE'
+        '11111111-1111-1111-1111-111111111111'
     ),
     (
         '77777777-7777-7777-7777-777777777777',
@@ -209,9 +211,10 @@ VALUES
         7.00,
         0,
         2026,
+        now(),
         now() + interval '10 days',
         now() + interval '18 days',
         true,
-        'ACTIVE'
+        '11111111-1111-1111-1111-111111111111'
     )
 ON CONFLICT (id) DO NOTHING;

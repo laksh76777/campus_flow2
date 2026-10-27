@@ -6,9 +6,10 @@ let supabaseAdmin: SupabaseClient | null = null;
 
 export const getSupabaseClient = (): SupabaseClient => {
     if (!supabaseClient) {
+        const apiKey = env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || "dummy-anon-key";
         supabaseClient = createClient(
             env.SUPABASE_URL,
-            env.SUPABASE_ANON_KEY || "dummy-anon-key",
+            apiKey,
             {
                 auth: {
                     persistSession: false,
@@ -22,9 +23,10 @@ export const getSupabaseClient = (): SupabaseClient => {
 
 export const getSupabaseAdmin = (): SupabaseClient => {
     if (!supabaseAdmin) {
+        const adminKey = env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || "dummy-admin-key";
         supabaseAdmin = createClient(
             env.SUPABASE_URL,
-            env.SUPABASE_SERVICE_ROLE_KEY || env.SUPABASE_ANON_KEY || "dummy-admin-key",
+            adminKey,
             {
                 auth: {
                     persistSession: false,

@@ -28,8 +28,13 @@ export const adminRegisterSchema = z.object({
 });
 
 export const loginSchema = z.object({
-    email: z.string().min(1, "Email or USN is required"),
+    email: z.string().optional(),
+    rollNumber: z.string().optional(),
+    identifier: z.string().optional(),
     password: z.string().min(1, "Password is required")
+}).refine((data) => Boolean(data.email || data.rollNumber || data.identifier), {
+    message: "Email, USN, or Enrollment number is required",
+    path: ["email"]
 });
 
 export const forgotPasswordSchema = z.object({

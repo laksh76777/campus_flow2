@@ -124,10 +124,11 @@ export const sendEmail = async (options: {
         return { success: false, error: "Invalid recipient email address" };
     }
 
-    // Try Resend HTTPS API first
+    // Try Resend HTTPS API first if configured
     if (isResendConfigured()) {
         const ok = await sendViaResend(options);
-        return ok ? { success: true } : { success: false, error: "Resend API error" };
+        if (ok) return { success: true };
+        console.warn("Resend API delivery failed. Falling back to SMTP transport...");
     }
 
     const t = getTransporter();

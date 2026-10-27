@@ -16,6 +16,11 @@ import { AdminRepository } from "../repositories/admin.repository.js";
 import { PasswordResetRepository } from "../repositories/passwordReset.repository.js";
 import { sendOtpEmail } from "../services/integrations/email/mail.service.js";
 import { uploadToStorage } from "../services/integrations/storage/cloudinary.service.js";
+import {
+    syncUserToSupabaseAuth,
+    signInWithSupabase,
+    updateSupabaseAuthPassword
+} from "../services/integrations/auth/supabaseAuth.service.js";
 import { env } from "../config/env.js";
 
 export const registerStudent = asyncHandler(async (req: Request, res: Response) => {
@@ -76,8 +81,18 @@ export const registerStudent = asyncHandler(async (req: Request, res: Response) 
         currentSemester
     });
 
-    const accessToken = generateAccessToken({ id: user.id, email: user.email, role: "student" });
-    const refreshToken = generateRefreshToken({ id: user.id });
+    // Synchronize user to Supabase Auth
+    await syncUserToSupabaseAuth({
+        id: user.id,
+        email: user.email,
+        password,
+        role: "student",
+        fullName: user.full_name
+    });
+
+    const supabaseSession = await signInWithSupabase(user.email, password);
+    const accessToken = supabaseSession?.accessToken || generateAccessToken({ id: user.id, email: user.email, role: "student" });
+    const refreshToken = supabaseSession?.refreshToken || generateRefreshToken({ id: user.id });
 
     await UserRepository.updateRefreshToken(user.id, refreshToken);
 
@@ -138,8 +153,18 @@ export const registerAdmin = asyncHandler(async (req: Request, res: Response) =>
         department
     });
 
-    const accessToken = generateAccessToken({ id: user.id, email: user.email, role: "admin" });
-    const refreshToken = generateRefreshToken({ id: user.id });
+    // Synchronize admin to Supabase Auth
+    await syncUserToSupabaseAuth({
+        id: user.id,
+        email: user.email,
+        password,
+        role: "admin",
+        fullName: user.full_name
+    });
+
+    const supabaseSession = await signInWithSupabase(user.email, password);
+    const accessToken = supabaseSession?.accessToken || generateAccessToken({ id: user.id, email: user.email, role: "admin" });
+    const refreshToken = supabaseSession?.refreshToken || generateRefreshToken({ id: user.id });
 
     await UserRepository.updateRefreshToken(user.id, refreshToken);
 
@@ -168,9 +193,14 @@ export const registerAdmin = asyncHandler(async (req: Request, res: Response) =>
 });
 
 export const loginUser = asyncHandler(async (req: Request, res: Response) => {
-    const { email, password } = req.body;
+    const rawIdentifier = req.body.email || req.body.rollNumber || req.body.identifier;
+    const { password } = req.body;
 
-    const record = await UserRepository.findByUSNorEmail(email);
+    if (!rawIdentifier) {
+        throw new ApiError(400, "Email, USN, or Enrollment number is required.");
+    }
+
+    const record = await UserRepository.findByUSNorEmail(rawIdentifier);
     if (!record) {
         throw new ApiError(401, "Invalid email/USN or password.");
     }
@@ -181,8 +211,21 @@ export const loginUser = asyncHandler(async (req: Request, res: Response) => {
         throw new ApiError(401, "Invalid email/USN or password.");
     }
 
-    const accessToken = generateAccessToken({ id: user.id, email: user.email, role: user.role });
-    const refreshToken = generateRefreshToken({ id: user.id });
+    // Authenticate and synchronize with Supabase Auth
+    let supabaseSession = await signInWithSupabase(user.email, password);
+    if (!supabaseSession) {
+        await syncUserToSupabaseAuth({
+            id: user.id,
+            email: user.email,
+            password,
+            role: user.role,
+            fullName: user.full_name
+        });
+        supabaseSession = await signInWithSupabase(user.email, password);
+    }
+
+    const accessToken = supabaseSession?.accessToken || generateAccessToken({ id: user.id, email: user.email, role: user.role });
+    const refreshToken = supabaseSession?.refreshToken || generateRefreshToken({ id: user.id });
 
     await UserRepository.updateRefreshToken(user.id, refreshToken);
     await UserRepository.updateLastLogin(user.id);
@@ -366,6 +409,7 @@ export const resetPassword = asyncHandler(async (req: Request, res: Response) =>
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     await UserRepository.updatePassword(challenge.user_id, passwordHash);
+    await updateSupabaseAuthPassword(challenge.user_id, newPassword);
     await PasswordResetRepository.consume(challenge.id);
 
     return res.status(200).json(
