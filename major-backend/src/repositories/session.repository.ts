@@ -1,39 +1,29 @@
 import { query } from "../database/db.js";
 import { PlacementSessionRecord } from "../database/types.js";
-
-export const DEMO_SESSION: any = {
-    id: "00000000-0000-0000-0000-000000002026",
-    session_year: 2026,
-    name: "2025-2026",
-    academic_year: "2025-2026",
-    description: "Placement Cohort for Graduating Class of 2026",
-    is_active: true,
-    is_closed: false,
-    is_archived: false,
-    status: "ACTIVE",
-    start_date: new Date("2025-07-01T00:00:00Z"),
-    end_date: new Date("2026-06-30T00:00:00Z"),
-    admission_year_mapping: [
-        { course: "B.E.", courseDurationYears: 4, admissionYear: 2022 },
-        { course: "MBA", courseDurationYears: 2, admissionYear: 2024 },
-        { course: "MCA", courseDurationYears: 2, admissionYear: 2024 },
-        { course: "M.Tech", courseDurationYears: 2, admissionYear: 2024 }
-    ],
-    target_placement_percentage: 95.0,
-    created_by: null,
-    created_at: new Date("2025-01-01T00:00:00Z"),
-    updated_at: new Date("2025-01-01T00:00:00Z")
-};
+import { ApiError } from "../utils/ApiError.js";
 
 export class SessionRepository {
-    static async findAll(): Promise<PlacementSessionRecord[]> {
+    static async findAll(status?: string, includeArchived: boolean = true): Promise<PlacementSessionRecord[]> {
         try {
+            const conditions: string[] = ["1=1"];
+            const params: any[] = [];
+            let idx = 1;
+
+            if (status && status !== "ALL") {
+                conditions.push(`status = $${idx}`);
+                params.push(status);
+                idx++;
+            } else if (!includeArchived) {
+                conditions.push("is_archived = false");
+            }
+
             const res = await query<PlacementSessionRecord>(
-                "SELECT * FROM placement_sessions ORDER BY session_year DESC"
+                `SELECT * FROM placement_sessions WHERE ${conditions.join(" AND ")} ORDER BY session_year DESC`,
+                params
             );
-            return res.rows.length > 0 ? res.rows : [DEMO_SESSION];
+            return res.rows;
         } catch {
-            return [DEMO_SESSION];
+            return [];
         }
     }
 
@@ -43,9 +33,9 @@ export class SessionRepository {
                 "SELECT * FROM placement_sessions WHERE id = $1 LIMIT 1",
                 [id]
             );
-            return res.rows[0] || (id === DEMO_SESSION.id ? DEMO_SESSION : null);
+            return res.rows[0] || null;
         } catch {
-            return id === DEMO_SESSION.id ? DEMO_SESSION : null;
+            return null;
         }
     }
 
@@ -55,9 +45,9 @@ export class SessionRepository {
                 "SELECT * FROM placement_sessions WHERE session_year = $1 LIMIT 1",
                 [year]
             );
-            return res.rows[0] || (year === DEMO_SESSION.session_year ? DEMO_SESSION : null);
+            return res.rows[0] || null;
         } catch {
-            return year === DEMO_SESSION.session_year ? DEMO_SESSION : null;
+            return null;
         }
     }
 
@@ -66,9 +56,9 @@ export class SessionRepository {
             const res = await query<PlacementSessionRecord>(
                 "SELECT * FROM placement_sessions WHERE is_active = true LIMIT 1"
             );
-            return res.rows[0] || DEMO_SESSION;
+            return res.rows[0] || null;
         } catch {
-            return DEMO_SESSION;
+            return null;
         }
     }
 
@@ -90,32 +80,50 @@ export class SessionRepository {
             await query("UPDATE placement_sessions SET is_active = false WHERE is_active = true");
         }
 
-        const res = await query<PlacementSessionRecord>(
-            `INSERT INTO placement_sessions (
-                session_year, name, academic_year, description, is_active,
-                status, start_date, end_date, admission_year_mapping,
-                target_placement_percentage, created_by
-             )
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-             RETURNING *`,
-            [
-                data.sessionYear,
-                data.name,
-                data.academicYear || "",
-                data.description || "",
-                data.isActive ?? false,
-                data.status || "ACTIVE",
-                data.startDate || new Date().toISOString(),
-                data.endDate || null,
-                JSON.stringify(data.admissionYearMapping || []),
-                data.targetPlacementPercentage || 90,
-                data.createdBy || null
-            ]
-        );
-        return res.rows[0];
+        try {
+            const res = await query<PlacementSessionRecord>(
+                `INSERT INTO placement_sessions (
+                    session_year, name, academic_year, description, is_active,
+                    status, start_date, end_date, admission_year_mapping,
+                    target_placement_percentage, created_by
+                 )
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                 RETURNING *`,
+                [
+                    data.sessionYear,
+                    data.name,
+                    data.academicYear || "",
+                    data.description || "",
+                    data.isActive ?? false,
+                    data.status || (data.isActive ? "ACTIVE" : "UPCOMING"),
+                    data.startDate || new Date().toISOString(),
+                    data.endDate || null,
+                    JSON.stringify(data.admissionYearMapping || []),
+                    data.targetPlacementPercentage || 90,
+                    data.createdBy || null
+                ]
+            );
+            return res.rows[0];
+        } catch (err: any) {
+            if (err?.code === "23505") {
+                throw new ApiError(409, `Placement session for year ${data.sessionYear} already exists.`);
+            }
+            throw err;
+        }
     }
 
     static async update(id: string, updates: Partial<PlacementSessionRecord>): Promise<PlacementSessionRecord> {
+        if (updates.session_year || (updates as any).sessionYear) {
+            const targetYear = updates.session_year || (updates as any).sessionYear;
+            const currentSession = await this.findById(id);
+            if (currentSession && currentSession.session_year !== targetYear) {
+                const driveCount = await query("SELECT COUNT(*) AS total FROM placement_drives WHERE placement_session_id = $1", [id]);
+                if (parseInt(driveCount.rows[0]?.total || "0", 10) > 0) {
+                    throw new ApiError(400, "Cannot change session year after placement drives have been scheduled in this session.");
+                }
+            }
+        }
+
         if (updates.is_active || (updates as any).isActive) {
             await query("UPDATE placement_sessions SET is_active = false WHERE id != $1 AND is_active = true", [id]);
         }
@@ -138,11 +146,18 @@ export class SessionRepository {
         }
 
         values.push(id);
-        const res = await query<PlacementSessionRecord>(
-            `UPDATE placement_sessions SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING *`,
-            values
-        );
-        return res.rows[0];
+        try {
+            const res = await query<PlacementSessionRecord>(
+                `UPDATE placement_sessions SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING *`,
+                values
+            );
+            return res.rows[0];
+        } catch (err: any) {
+            if (err?.code === "23505") {
+                throw new ApiError(409, "A placement session with this year or active status already exists.");
+            }
+            throw err;
+        }
     }
 
     static async activate(id: string): Promise<PlacementSessionRecord> {
@@ -255,5 +270,17 @@ export class SessionRepository {
             }
         }
         return { updatedCount: total };
+    }
+
+    static async delete(id: string): Promise<void> {
+        const driveCount = await query("SELECT COUNT(*) AS total FROM placement_drives WHERE placement_session_id = $1", [id]);
+        if (parseInt(driveCount.rows[0]?.total || "0", 10) > 0) {
+            throw new ApiError(400, "Cannot delete placement session with associated drives. Archive or close the session instead.");
+        }
+        const studentCount = await query("SELECT COUNT(*) AS total FROM student_profiles WHERE placement_session_id = $1", [id]);
+        if (parseInt(studentCount.rows[0]?.total || "0", 10) > 0) {
+            throw new ApiError(400, "Cannot delete placement session with enrolled students. Reassign students first or close the session.");
+        }
+        await query("DELETE FROM placement_sessions WHERE id = $1", [id]);
     }
 }

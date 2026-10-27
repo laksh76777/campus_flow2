@@ -65,7 +65,7 @@ export const lockMyProfile = asyncHandler(async (req: Request, res: Response) =>
 
 export const unlockStudentProfile = asyncHandler(async (req: Request, res: Response) => {
     const studentId = getParam(req.params.studentId);
-    const profile = await StudentRepository.findById(studentId);
+    const profile = await StudentRepository.findByIdOrUsn(studentId);
     if (!profile) throw new ApiError(404, "Student profile not found.");
 
     const updated = await StudentRepository.setProfileLock(profile.id, false);
@@ -84,6 +84,9 @@ export const requestProfileModification = asyncHandler(async (req: Request, res:
 
 export const uploadResume = asyncHandler(async (req: Request, res: Response) => {
     const student = req.student;
+    if (student.is_profile_locked) {
+        throw new ApiError(403, "Cannot upload resume while profile is locked. Please submit a modification request to TPO.");
+    }
     if (!req.file) {
         throw new ApiError(400, "Resume file is required (PDF format).");
     }
@@ -130,6 +133,10 @@ export const addSemesterResult = asyncHandler(async (req: Request, res: Response
 });
 
 export const addBacklogRecord = asyncHandler(async (req: Request, res: Response) => {
+    if (req.user.role === "student" && req.student?.is_profile_locked) {
+        throw new ApiError(403, "Cannot add backlog record while profile is locked. Please request modification from TPO.");
+    }
+
     const targetProfileId = req.user.role === "admin" && req.body.studentProfileId
         ? req.body.studentProfileId
         : req.student?.id;
@@ -141,6 +148,10 @@ export const addBacklogRecord = asyncHandler(async (req: Request, res: Response)
 });
 
 export const deleteBacklogRecord = asyncHandler(async (req: Request, res: Response) => {
+    if (req.user.role === "student" && req.student?.is_profile_locked) {
+        throw new ApiError(403, "Cannot delete backlog record while profile is locked. Please request modification from TPO.");
+    }
+
     const backlogId = getParam(req.params.backlogId);
     const targetProfileId = req.user.role === "admin" && req.query.studentProfileId
         ? String(req.query.studentProfileId)
@@ -192,6 +203,9 @@ export const validateCertificate = asyncHandler(async (req: Request, res: Respon
 
 export const addCertificate = asyncHandler(async (req: Request, res: Response) => {
     const student = req.student;
+    if (student.is_profile_locked) {
+        throw new ApiError(403, "Cannot add certificates while profile is locked. Please request modification from TPO.");
+    }
     const updated = await StudentRepository.addCertificate(student.id, req.body);
     return res.status(200).json(new ApiResponse(200, updated, "Certificate added to academic profile."));
 });
@@ -199,6 +213,9 @@ export const addCertificate = asyncHandler(async (req: Request, res: Response) =
 export const deleteCertificate = asyncHandler(async (req: Request, res: Response) => {
     const certId = getParam(req.params.certId);
     const student = req.student;
+    if (student.is_profile_locked) {
+        throw new ApiError(403, "Cannot delete certificates while profile is locked. Please request modification from TPO.");
+    }
     const updated = await StudentRepository.deleteCertificate(student.id, certId);
     return res.status(200).json(new ApiResponse(200, updated, "Certificate removed."));
 });
@@ -272,7 +289,7 @@ export const safeMigrateProfiles = asyncHandler(async (req: Request, res: Respon
 
 export const getStudentProfileById = asyncHandler(async (req: Request, res: Response) => {
     const id = getParam(req.params.id);
-    const profile = await StudentRepository.findById(id);
+    const profile = await StudentRepository.findByIdOrUsn(id);
     if (!profile) {
         throw new ApiError(404, "Student profile not found.");
     }

@@ -69,10 +69,29 @@ export const getSmtpConfigStatus = () => {
     };
 };
 
-const sendViaResend = async (options: { to: string; subject: string; html: string }): Promise<boolean> => {
+export const validateEmailConfigOnStartup = (): { provider: string; configured: boolean; sender: string } => {
+    if (isResendConfigured()) {
+        console.log(`[EMAIL] Active provider: Resend HTTPS API (Sender: ${env.EMAIL_FROM})`);
+        return { provider: "resend", configured: true, sender: env.EMAIL_FROM };
+    }
+    const smtp = getSmtpConfigStatus();
+    if (smtp.configured) {
+        console.log(`[EMAIL] Active provider: SMTP (${smtp.host}:${smtp.port}, Sender: ${env.EMAIL_FROM})`);
+        return { provider: "smtp", configured: true, sender: env.EMAIL_FROM };
+    }
+    console.log("[EMAIL] No external email provider configured. Emails will run in simulated development mode.");
+    return { provider: "none", configured: false, sender: env.EMAIL_FROM };
+};
+
+const sendViaResend = async (options: {
+    to: string;
+    subject: string;
+    html: string;
+}): Promise<{ success: boolean; messageId?: string; status: string; error?: string }> => {
     try {
         const res = await fetch("https://api.resend.com/emails", {
             method: "POST",
+            signal: AbortSignal.timeout(10000),
             headers: {
                 Authorization: `Bearer ${env.RESEND_API_KEY}`,
                 "Content-Type": "application/json"
@@ -85,15 +104,32 @@ const sendViaResend = async (options: { to: string; subject: string; html: strin
             })
         });
 
+        const data: any = await res.json().catch(() => ({}));
+
         if (!res.ok) {
-            const errBody = await res.text();
-            console.error("Resend API delivery error:", errBody);
-            return false;
+            const errorMessage = data?.message || `HTTP ${res.status}: ${res.statusText}`;
+            console.warn(`[EMAIL] Resend API error (${res.status}): ${errorMessage}`);
+            return {
+                success: false,
+                status: res.status === 429 ? "THROTTLED" : "FAILED",
+                error: errorMessage
+            };
         }
-        return true;
-    } catch (err) {
-        console.error("Failed to dispatch email via Resend:", err);
-        return false;
+
+        return {
+            success: true,
+            messageId: data?.id,
+            status: "ACCEPTED"
+        };
+    } catch (err: any) {
+        const isTimeout = err?.name === "TimeoutError" || err?.name === "AbortError";
+        const message = isTimeout ? "Resend API connection timed out (10s limit)" : (err?.message || "Network error");
+        console.error("[EMAIL] Resend dispatch failure:", message);
+        return {
+            success: false,
+            status: isTimeout ? "TIMEOUT" : "FAILED",
+            error: message
+        };
     }
 };
 
@@ -119,22 +155,24 @@ export const sendEmail = async (options: {
     to: string;
     subject: string;
     html: string;
-}): Promise<{ success: boolean; messageId?: string; simulated?: boolean; error?: string }> => {
+}): Promise<{ success: boolean; messageId?: string; status?: string; simulated?: boolean; error?: string }> => {
     if (!validateEmailAddress(options.to)) {
-        return { success: false, error: "Invalid recipient email address" };
+        return { success: false, status: "INVALID_RECIPIENT", error: "Invalid recipient email address" };
     }
 
     // Try Resend HTTPS API first if configured
     if (isResendConfigured()) {
-        const ok = await sendViaResend(options);
-        if (ok) return { success: true };
-        console.warn("Resend API delivery failed. Falling back to SMTP transport...");
+        const resendRes = await sendViaResend(options);
+        if (resendRes.success) {
+            return { success: true, messageId: resendRes.messageId, status: resendRes.status };
+        }
+        console.warn("[EMAIL] Resend API failed. Attempting fallback to SMTP transport...");
     }
 
     const t = getTransporter();
     if (!t) {
         console.log(`[SIMULATED EMAIL] To: ${options.to} | Subject: ${options.subject}`);
-        return { success: true, simulated: true };
+        return { success: true, status: "SIMULATED", simulated: true };
     }
 
     try {
@@ -144,10 +182,10 @@ export const sendEmail = async (options: {
             subject: options.subject,
             html: options.html
         });
-        return { success: true, messageId: info.messageId };
+        return { success: true, messageId: info.messageId, status: "SENT" };
     } catch (err: any) {
-        console.error("SMTP error dispatching email:", err);
-        return { success: false, error: err?.message || "SMTP error" };
+        console.error("[EMAIL] SMTP dispatch failure:", err?.message || err);
+        return { success: false, status: "FAILED", error: err?.message || "SMTP error" };
     }
 };
 
@@ -176,7 +214,7 @@ export const sendDeadlineReminderEmail = async (
         deadline: string;
         driveId: string;
     }
-): Promise<boolean> => {
+): Promise<{ success: boolean; messageId?: string; status?: string; error?: string }> => {
     const appUrl = `${env.FRONTEND_URL}/placement-drives`;
     const html = `
         <div style="font-family: Arial, sans-serif; max-width: 550px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
@@ -199,5 +237,10 @@ export const sendDeadlineReminderEmail = async (
         subject: `[Deadline Reminder] ${driveDetails.companyName} Application Closing Soon`,
         html
     });
-    return res.success;
+    return {
+        success: res.success,
+        messageId: res.messageId,
+        status: res.status,
+        error: res.error
+    };
 };

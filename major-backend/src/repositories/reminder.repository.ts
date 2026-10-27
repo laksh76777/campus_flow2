@@ -2,6 +2,54 @@ import { query } from "../database/db.js";
 import { ReminderJobRecord } from "../database/types.js";
 
 export class ReminderRepository {
+    /**
+     * Atomically claims pending reminder jobs that are due for execution using FOR UPDATE SKIP LOCKED.
+     * Also recovers zombie jobs that were left in PROCESSING state after an unexpected worker crash.
+     */
+    static async claimDueJobs(limit: number = 10, now: Date = new Date()): Promise<ReminderJobRecord[]> {
+        // 1. Recover zombie jobs that were abandoned in PROCESSING for > 10 minutes
+        await query(
+            `UPDATE reminder_jobs
+             SET status = 'PENDING',
+                 error_category = 'Worker timeout recovery - rescheduled to pending'
+             WHERE status = 'PROCESSING'
+               AND last_attempt_at < now() - INTERVAL '10 minutes'
+               AND attempts < max_attempts`
+        );
+
+        // 2. Mark permanently failed jobs that timed out and reached max_attempts
+        await query(
+            `UPDATE reminder_jobs
+             SET status = 'FAILED',
+                 error_category = 'Exceeded maximum retry attempts during processing'
+             WHERE status = 'PROCESSING'
+               AND last_attempt_at < now() - INTERVAL '10 minutes'
+               AND attempts >= max_attempts`
+        );
+
+        // 3. Atomically claim due pending jobs with SKIP LOCKED concurrency protection
+        const res = await query<ReminderJobRecord>(
+            `WITH claimable AS (
+                SELECT id FROM reminder_jobs
+                WHERE status = 'PENDING'
+                  AND scheduled_time <= $1
+                ORDER BY scheduled_time ASC
+                LIMIT $2
+                FOR UPDATE SKIP LOCKED
+             )
+             UPDATE reminder_jobs rj
+             SET status = 'PROCESSING',
+                 attempts = attempts + 1,
+                 last_attempt_at = now()
+             FROM claimable
+             WHERE rj.id = claimable.id
+             RETURNING rj.*`,
+            [now, limit]
+        );
+
+        return res.rows;
+    }
+
     static async findPendingDue(now: Date = new Date()): Promise<ReminderJobRecord[]> {
         const res = await query<ReminderJobRecord>(
             `SELECT * FROM reminder_jobs
@@ -36,15 +84,14 @@ export class ReminderRepository {
         scheduledTime: Date;
         driveDeadline: Date;
         channels?: string[];
-    }): Promise<ReminderJobRecord> {
+    }): Promise<ReminderJobRecord | null> {
         const res = await query<ReminderJobRecord>(
             `INSERT INTO reminder_jobs (
                 drive_id, idempotency_key, offset_hours, scheduled_time,
                 drive_deadline, channels, status
              )
              VALUES ($1, $2, $3, $4, $5, $6, 'PENDING')
-             ON CONFLICT (idempotency_key) DO UPDATE
-             SET status = 'PENDING', error_category = ''
+             ON CONFLICT (idempotency_key) DO NOTHING
              RETURNING *`,
             [
                 data.driveId,
@@ -55,7 +102,7 @@ export class ReminderRepository {
                 data.channels || ["in_app", "email"]
             ]
         );
-        return res.rows[0];
+        return res.rows[0] || null;
     }
 
     static async updateJobStatus(
@@ -77,12 +124,13 @@ export class ReminderRepository {
                  error_category = COALESCE($3, error_category),
                  delivery_summary = COALESCE($4, delivery_summary),
                  in_app_completed = COALESCE($5, in_app_completed),
-                 email_completed = COALESCE($6, email_completed)
+                 email_completed = COALESCE($6, email_completed),
+                 updated_at = now()
              WHERE id = $7`,
             [
                 status,
-                extra.attempts || null,
-                extra.errorCategory || null,
+                extra.attempts != null ? extra.attempts : null,
+                extra.errorCategory != null ? extra.errorCategory : null,
                 extra.deliverySummary ? JSON.stringify(extra.deliverySummary) : null,
                 extra.inAppCompleted ?? null,
                 extra.emailCompleted ?? null,
@@ -91,13 +139,14 @@ export class ReminderRepository {
         );
     }
 
-    static async cancelPendingForDrive(driveId: string, reason: string): Promise<void> {
-        await query(
+    static async cancelPendingForDrive(driveId: string, reason: string): Promise<number> {
+        const res = await query(
             `UPDATE reminder_jobs
-             SET status = 'CANCELLED', error_category = $1
+             SET status = 'CANCELLED', error_category = $1, updated_at = now()
              WHERE drive_id = $2 AND status = 'PENDING'`,
             [reason, driveId]
         );
+        return (res as any).rowCount || 0;
     }
 
     static async findAllJobs(limit: number = 100): Promise<ReminderJobRecord[]> {

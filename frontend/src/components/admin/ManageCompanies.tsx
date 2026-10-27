@@ -15,6 +15,7 @@ import {
   X,
   Upload,
   ExternalLink,
+  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -22,6 +23,7 @@ import {
   updateCompany,
   deactivateCompany,
   reactivateCompany,
+  deleteCompany,
 } from "../../services/adminService";
 
 const COMMON_INDUSTRIES = [
@@ -206,24 +208,45 @@ export default function ManageCompanies({
 
   // Toggle Company Active/Inactive
   const handleToggleStatus = async (company) => {
-    const isCurrentlyActive = company.isActive !== false;
+    const compId = company.id || company._id;
+    const name = company.companyName || company.company_name;
+    const isCurrentlyActive = company.isActive !== false && company.is_active !== false;
     const action = isCurrentlyActive ? "deactivate" : "reactivate";
     const confirm = window.confirm(
-      `Are you sure you want to ${action} ${company.companyName}?`
+      `Are you sure you want to ${action} ${name}?`
     );
     if (!confirm) return;
 
     try {
       if (isCurrentlyActive) {
-        await deactivateCompany(company._id);
-        toast.success(`${company.companyName} deactivated`);
+        await deactivateCompany(compId);
+        toast.success(`${name} deactivated`);
       } else {
-        await reactivateCompany(company._id);
-        toast.success(`${company.companyName} reactivated`);
+        await reactivateCompany(compId);
+        toast.success(`${name} reactivated`);
       }
       onRefresh();
     } catch (err) {
       const msg = err.response?.data?.message || "Action failed";
+      toast.error(msg);
+    }
+  };
+
+  // Safe Company Deletion
+  const handleDeleteCompany = async (company) => {
+    const compId = company.id || company._id;
+    const name = company.companyName || company.company_name;
+    const confirm = window.confirm(
+      `Are you sure you want to delete ${name}? Note: Companies with historical placement drives cannot be deleted.`
+    );
+    if (!confirm) return;
+
+    try {
+      await deleteCompany(compId);
+      toast.success(`${name} deleted successfully`);
+      onRefresh();
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || "Failed to delete company";
       toast.error(msg);
     }
   };
@@ -460,12 +483,20 @@ export default function ManageCompanies({
                       title={isActive ? "Deactivate company" : "Reactivate company"}
                       className={`flex items-center justify-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
                         isActive
-                          ? "border border-rose-200 bg-rose-50/70 text-rose-600 hover:bg-rose-100"
+                          ? "border border-amber-200 bg-amber-50/70 text-amber-700 hover:bg-amber-100"
                           : "border border-emerald-200 bg-emerald-50/70 text-emerald-700 hover:bg-emerald-100"
                       }`}
                     >
                       <Power className="h-3.5 w-3.5" />
                       <span>{isActive ? "Deactivate" : "Activate"}</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleDeleteCompany(company)}
+                      title="Delete corporate partner"
+                      className="flex items-center justify-center rounded-xl p-1.5 text-xs font-semibold border border-rose-200 bg-rose-50/70 text-rose-600 hover:bg-rose-100 transition"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </div>
                 </div>

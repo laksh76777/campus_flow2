@@ -59,62 +59,124 @@ export const getStudentDashboardStats = asyncHandler(async (req: Request, res: R
 });
 
 export const getAdminDashboardStats = asyncHandler(async (req: Request, res: Response) => {
-    try {
-        const totalStudentsRes = await query("SELECT COUNT(*) AS count FROM student_profiles");
-        const placedStudentsRes = await query("SELECT COUNT(*) AS count FROM student_profiles WHERE is_placed = true");
-        const activeDrivesRes = await query("SELECT COUNT(*) AS count FROM placement_drives WHERE is_active = true");
-        const totalCompaniesRes = await query("SELECT COUNT(*) AS count FROM companies WHERE is_active = true");
+    const { sessionYear, branch } = req.query;
 
-        let pendingCount = 0;
-        try {
-            const pendingModificationsRes = await query(`
-                SELECT COUNT(*) AS count
-                FROM student_profiles sp, jsonb_array_elements(
-                    CASE 
-                        WHEN jsonb_typeof(sp.modification_requests) = 'array' THEN sp.modification_requests 
-                        ELSE '[]'::jsonb 
-                    END
-                ) AS req
-                WHERE req->>'status' = 'PENDING'
-            `);
-            pendingCount = parseInt(pendingModificationsRes.rows[0]?.count || "0", 10);
-        } catch {
-            pendingCount = 0;
-        }
+    const studentConditions: string[] = ["1=1"];
+    const params: any[] = [];
+    let pIdx = 1;
 
-        const totalStudents = parseInt(totalStudentsRes.rows[0]?.count || "0", 10);
-        const placedStudents = parseInt(placedStudentsRes.rows[0]?.count || "0", 10);
-        const activeDrives = parseInt(activeDrivesRes.rows[0]?.count || "0", 10);
-        const totalCompanies = parseInt(totalCompaniesRes.rows[0]?.count || "0", 10);
-
-        return res.status(200).json(
-            new ApiResponse(
-                200,
-                {
-                    totalStudents: totalStudents > 0 ? totalStudents : 124,
-                    placedStudents: placedStudents > 0 ? placedStudents : 98,
-                    activeDrives: activeDrives > 0 ? activeDrives : 12,
-                    totalCompanies: totalCompanies > 0 ? totalCompanies : 45,
-                    pendingModifications: pendingCount,
-                    placementRate: totalStudents > 0 ? ((placedStudents / totalStudents) * 100).toFixed(1) : "79.0"
-                },
-                "TPO Admin dashboard metrics retrieved."
-            )
-        );
-    } catch {
-        return res.status(200).json(
-            new ApiResponse(
-                200,
-                {
-                    totalStudents: 124,
-                    placedStudents: 98,
-                    activeDrives: 12,
-                    totalCompanies: 45,
-                    pendingModifications: 0,
-                    placementRate: "79.0"
-                },
-                "TPO Admin dashboard metrics retrieved."
-            )
-        );
+    if (sessionYear && sessionYear !== "all") {
+        studentConditions.push(`sp.graduation_year = $${pIdx}`);
+        params.push(parseInt(String(sessionYear), 10));
+        pIdx++;
     }
+
+    if (branch && branch !== "all") {
+        studentConditions.push(`sp.branch = $${pIdx}`);
+        params.push(String(branch));
+        pIdx++;
+    }
+
+    const studentWhere = studentConditions.join(" AND ");
+
+    // Authoritative totals from PostgreSQL
+    const totalStudentsRes = await query(
+        `SELECT COUNT(*)::int AS count FROM student_profiles sp WHERE ${studentWhere}`,
+        params
+    );
+    const placedStudentsRes = await query(
+        `SELECT COUNT(*)::int AS count FROM student_profiles sp WHERE ${studentWhere} AND sp.is_placed = true`,
+        params
+    );
+
+    const driveParams: any[] = [];
+    let driveWhere = "1=1";
+    if (sessionYear && sessionYear !== "all") {
+        driveWhere = "graduation_year = $1";
+        driveParams.push(parseInt(String(sessionYear), 10));
+    }
+
+    const drivesRes = await query(
+        `SELECT COUNT(*)::int AS total_count,
+                COUNT(*) FILTER (WHERE is_active = true)::int AS active_count
+         FROM placement_drives
+         WHERE ${driveWhere}`,
+        driveParams
+    );
+
+    const companiesRes = await query(
+        `SELECT COUNT(*)::int AS total_count,
+                COUNT(*) FILTER (WHERE is_active = true)::int AS active_count
+         FROM companies`
+    );
+
+    let pendingModificationsCount = 0;
+    try {
+        const pendingModificationsRes = await query(`
+            SELECT COUNT(*)::int AS count
+            FROM student_profiles sp, jsonb_array_elements(
+                CASE 
+                    WHEN jsonb_typeof(sp.modification_requests) = 'array' THEN sp.modification_requests 
+                    ELSE '[]'::jsonb 
+                END
+            ) AS req
+            WHERE req->>'status' = 'PENDING'
+        `);
+        pendingModificationsCount = pendingModificationsRes.rows[0]?.count || 0;
+    } catch {
+        pendingModificationsCount = 0;
+    }
+
+    // Authoritative application status breakdown
+    const appStatsRes = await query(`
+        SELECT COUNT(*)::int AS total,
+               COUNT(*) FILTER (WHERE status = 'applied')::int AS applied,
+               COUNT(*) FILTER (WHERE status = 'shortlisted')::int AS shortlisted,
+               COUNT(*) FILTER (WHERE status = 'interview')::int AS interview,
+               COUNT(*) FILTER (WHERE status IN ('selected', 'offer_received', 'offer_accepted'))::int AS selected,
+               COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected,
+               COUNT(*) FILTER (WHERE status = 'withdrawn')::int AS withdrawn
+        FROM applications
+    `);
+    const appRow = appStatsRes.rows[0] || {};
+
+    const totalStudents = totalStudentsRes.rows[0]?.count || 0;
+    const placedStudents = placedStudentsRes.rows[0]?.count || 0;
+    const activeDrives = drivesRes.rows[0]?.active_count || 0;
+    const totalDrives = drivesRes.rows[0]?.total_count || 0;
+    const activeCompanies = companiesRes.rows[0]?.active_count || 0;
+    const totalCompanies = companiesRes.rows[0]?.total_count || 0;
+
+    const placementRate = totalStudents > 0
+        ? ((placedStudents / totalStudents) * 100).toFixed(1)
+        : "0.0";
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            {
+                totalStudents,
+                placedStudents,
+                activeDrives,
+                totalDrives,
+                activeCompanies,
+                totalCompanies,
+                pendingModifications: pendingModificationsCount,
+                placementRate,
+                students: { total: totalStudents, placed: placedStudents },
+                companies: { total: totalCompanies, active: activeCompanies },
+                placementDrives: { total: totalDrives, active: activeDrives },
+                applications: {
+                    total: appRow.total || 0,
+                    applied: appRow.applied || 0,
+                    shortlisted: appRow.shortlisted || 0,
+                    interview: appRow.interview || 0,
+                    selected: appRow.selected || 0,
+                    rejected: appRow.rejected || 0,
+                    withdrawn: appRow.withdrawn || 0
+                }
+            },
+            "TPO Admin dashboard metrics retrieved."
+        )
+    );
 });

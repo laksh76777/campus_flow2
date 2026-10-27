@@ -8,10 +8,15 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "worker": "node dist/worker.js",
+    "worker:dev": "tsx watch src/worker.ts",
     "migrate": "tsx src/database/migrate.ts",
     "seed": "tsx src/database/seed.ts",
+    "reset:placement-data": "tsx src/scripts/resetPlacementData.ts",
+    "freshstart:placement": "tsx src/scripts/freshStartPlacement.ts",
+    "restore:placement-data": "tsx src/scripts/restorePlacementData.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test --test-concurrency=1 tests/*.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
@@ -41,5 +46,8 @@
     "@types/pg": "^8.11.10",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

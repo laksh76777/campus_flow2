@@ -37,9 +37,6 @@ export const DEMO_STUDENT_USER: UserRecord = {
 
 export class UserRepository {
     static async findById(id: string): Promise<UserRecord | null> {
-        if (id === DEMO_ADMIN_USER.id) return DEMO_ADMIN_USER;
-        if (id === DEMO_STUDENT_USER.id) return DEMO_STUDENT_USER;
-
         try {
             const res = await query<UserRecord>("SELECT * FROM users WHERE id = $1 LIMIT 1", [id]);
             return res.rows[0] || null;
@@ -50,9 +47,6 @@ export class UserRepository {
 
     static async findByEmail(email: string): Promise<UserRecord | null> {
         const clean = email.trim().toLowerCase();
-        if (clean === "admin@campusflow.edu") return DEMO_ADMIN_USER;
-        if (clean === "student@campusflow.edu") return DEMO_STUDENT_USER;
-
         try {
             const res = await query<UserRecord>(
                 "SELECT * FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1",
@@ -67,19 +61,18 @@ export class UserRepository {
     static async findByUSNorEmail(identifier: string): Promise<{ user: UserRecord; studentProfileId?: string } | null> {
         const clean = identifier.trim().toLowerCase();
 
-        if (clean === "admin@campusflow.edu") {
-            return { user: DEMO_ADMIN_USER };
-        }
-
-        if (clean === "student@campusflow.edu" || clean === "1rv22cs042" || clean === "en2022cse042") {
-            return { user: DEMO_STUDENT_USER, studentProfileId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" };
-        }
-
         try {
             // Check email first
             const userByEmail = await this.findByEmail(clean);
             if (userByEmail) {
-                return { user: userByEmail };
+                let studentProfileId: string | undefined;
+                if (userByEmail.role === "student") {
+                    const spRes = await query("SELECT id FROM student_profiles WHERE user_id = $1 LIMIT 1", [userByEmail.id]);
+                    if (spRes.rows.length > 0) {
+                        studentProfileId = spRes.rows[0].id;
+                    }
+                }
+                return { user: userByEmail, studentProfileId };
             }
 
             // Check USN or Enrollment Number via student_profiles
@@ -121,56 +114,22 @@ export class UserRepository {
     }
 
     static async updateRefreshToken(userId: string, refreshToken: string | null): Promise<void> {
-        if (userId === DEMO_ADMIN_USER.id) {
-            DEMO_ADMIN_USER.refresh_token = refreshToken;
-            return;
-        }
-        if (userId === DEMO_STUDENT_USER.id) {
-            DEMO_STUDENT_USER.refresh_token = refreshToken;
-            return;
-        }
-        try {
-            await query("UPDATE users SET refresh_token = $1 WHERE id = $2", [refreshToken, userId]);
-        } catch {}
+        await query("UPDATE users SET refresh_token = $1 WHERE id = $2", [refreshToken, userId]);
     }
 
     static async updateLastLogin(userId: string): Promise<void> {
-        try {
-            await query("UPDATE users SET last_login_at = now() WHERE id = $1", [userId]);
-        } catch {}
+        await query("UPDATE users SET last_login_at = now() WHERE id = $1", [userId]);
     }
 
     static async updatePassword(userId: string, passwordHash: string): Promise<void> {
-        if (userId === DEMO_ADMIN_USER.id) {
-            DEMO_ADMIN_USER.password_hash = passwordHash;
-            return;
-        }
-        if (userId === DEMO_STUDENT_USER.id) {
-            DEMO_STUDENT_USER.password_hash = passwordHash;
-            return;
-        }
-        try {
-            await query("UPDATE users SET password_hash = $1 WHERE id = $2", [passwordHash, userId]);
-        } catch {}
+        await query("UPDATE users SET password_hash = $1 WHERE id = $2", [passwordHash, userId]);
     }
 
     static async updateAvatar(userId: string, avatarUrl: string, avatarPublicId: string): Promise<void> {
-        if (userId === DEMO_ADMIN_USER.id) {
-            DEMO_ADMIN_USER.avatar_url = avatarUrl;
-            DEMO_ADMIN_USER.avatar_public_id = avatarPublicId;
-            return;
-        }
-        if (userId === DEMO_STUDENT_USER.id) {
-            DEMO_STUDENT_USER.avatar_url = avatarUrl;
-            DEMO_STUDENT_USER.avatar_public_id = avatarPublicId;
-            return;
-        }
-        try {
-            await query("UPDATE users SET avatar_url = $1, avatar_public_id = $2 WHERE id = $3", [
-                avatarUrl,
-                avatarPublicId,
-                userId
-            ]);
-        } catch {}
+        await query("UPDATE users SET avatar_url = $1, avatar_public_id = $2 WHERE id = $3", [
+            avatarUrl,
+            avatarPublicId,
+            userId
+        ]);
     }
 }

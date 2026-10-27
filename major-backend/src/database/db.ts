@@ -15,7 +15,7 @@ export const getPool = (): pkg.Pool => {
                 : false,
             max: 20,
             idleTimeoutMillis: 30000,
-            connectionTimeoutMillis: 15000
+            connectionTimeoutMillis: 30000
         });
 
         pool.on("error", (err) => {

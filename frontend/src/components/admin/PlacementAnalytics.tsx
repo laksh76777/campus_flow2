@@ -147,9 +147,19 @@ export default function PlacementAnalytics({
       .sort((a: any, b: any) => b.offers - a.offers);
   }, [stats, applications]);
 
-  // CSV Report Exporter
+  // CSV Report Exporter with Formula Injection Neutralization
   const handleExportCSV = () => {
     try {
+      const sanitizeCsvCell = (val: any): string => {
+        if (val === null || val === undefined) return '""';
+        let str = String(val).trim();
+        // Escape formula characters to prevent CSV injection
+        if (/^[=+@\-\t\r]/.test(str)) {
+          str = `'${str}`;
+        }
+        return `"${str.replace(/"/g, '""')}"`;
+      };
+
       const headers = [
         "Candidate Name",
         "Enrollment No",
@@ -172,18 +182,18 @@ export default function PlacementAnalytics({
         const comp = typeof drive.company === "object" ? drive.company?.companyName : drive.companyName || "";
 
         return [
-          `"${user.fullName || student.fullName || "Candidate"}"`,
-          `"${student.enrollmentNumber || ""}"`,
-          `"${student.branch || ""}"`,
-          student.cgpa ?? "",
-          `"${comp}"`,
-          `"${drive.jobTitle || ""}"`,
-          drive.package ?? "",
-          `"${app.status}"`,
-          app.interviewDate ? `"${new Date(app.interviewDate).toLocaleDateString()}"` : '""',
-          `"${app.interviewRound || ""}"`,
+          sanitizeCsvCell(user.fullName || student.fullName || "Candidate"),
+          sanitizeCsvCell(student.enrollmentNumber || student.usn || ""),
+          sanitizeCsvCell(student.branch || student.department || ""),
+          student.cgpa !== undefined && student.cgpa !== null ? student.cgpa : "",
+          sanitizeCsvCell(comp),
+          sanitizeCsvCell(drive.jobTitle || ""),
+          drive.package !== undefined && drive.package !== null ? drive.package : "",
+          sanitizeCsvCell(app.status || ""),
+          app.interviewDate ? sanitizeCsvCell(new Date(app.interviewDate).toLocaleDateString()) : '""',
+          sanitizeCsvCell(app.interviewRound || ""),
           app.offeredPackage ?? (app.status === "selected" ? drive.package : ""),
-          `"${(app.remarks || "").replace(/"/g, '""')}"`,
+          sanitizeCsvCell(app.remarks || ""),
         ].join(",");
       });
 

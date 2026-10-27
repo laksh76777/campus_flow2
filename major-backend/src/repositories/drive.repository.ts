@@ -1,63 +1,7 @@
 import { query } from "../database/db.js";
 import { PlacementDriveRecord, CompanyRecord } from "../database/types.js";
 import { DEFAULT_SELECTION_ROUNDS, DEFAULT_STUDENT_REQUIREMENTS } from "../constants/appConstants.js";
-
-export const DEMO_DRIVES: any[] = [
-    {
-        id: "66666666-6666-6666-6666-666666666666",
-        company_id: "33333333-3333-3333-3333-333333333333",
-        company_name: "Google LLC",
-        company_logo_url: "https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg",
-        job_title: "Software Development Engineer I",
-        job_description: "Design, develop, test, deploy, and maintain large-scale software solutions for global users.",
-        job_type: "full-time",
-        package: 24.50,
-        location: "Bangalore, India",
-        eligible_branches: ["Computer Science & Engineering (CSE)", "Information Science & Engineering (ISE)"],
-        eligible_program_codes: ["CSE", "ISE"],
-        minimum_cgpa: 7.50,
-        maximum_backlogs: 0,
-        graduation_year: 2026,
-        application_deadline: new Date(Date.now() + 14 * 86400000).toISOString(),
-        drive_date: new Date(Date.now() + 21 * 86400000).toISOString(),
-        is_active: true,
-        status: "ACTIVE",
-        company: {
-            id: "33333333-3333-3333-3333-333333333333",
-            company_name: "Google LLC",
-            company_logo_url: "https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_2015_logo.svg",
-            company_website: "https://careers.google.com",
-            industry: "Information Technology"
-        }
-    },
-    {
-        id: "77777777-7777-7777-7777-777777777777",
-        company_id: "44444444-4444-4444-4444-444444444444",
-        company_name: "Microsoft Corporation",
-        company_logo_url: "https://upload.wikimedia.org/wikipedia/commons/9/96/Microsoft_logo_%282012%29.svg",
-        job_title: "Cloud Solutions Engineer",
-        job_description: "Build and scale enterprise cloud applications with high availability and security.",
-        job_type: "full-time",
-        package: 20.00,
-        location: "Hyderabad, India",
-        eligible_branches: ["Computer Science & Engineering (CSE)", "Information Science & Engineering (ISE)", "Electronics & Communication Engineering (ECE)"],
-        eligible_program_codes: ["CSE", "ISE", "ECE"],
-        minimum_cgpa: 7.00,
-        maximum_backlogs: 0,
-        graduation_year: 2026,
-        application_deadline: new Date(Date.now() + 10 * 86400000).toISOString(),
-        drive_date: new Date(Date.now() + 18 * 86400000).toISOString(),
-        is_active: true,
-        status: "ACTIVE",
-        company: {
-            id: "44444444-4444-4444-4444-444444444444",
-            company_name: "Microsoft Corporation",
-            company_logo_url: "https://upload.wikimedia.org/wikipedia/commons/9/96/Microsoft_logo_%282012%29.svg",
-            company_website: "https://careers.microsoft.com",
-            industry: "Information Technology"
-        }
-    }
-];
+import { ApiError } from "../utils/ApiError.js";
 
 export class DriveRepository {
     static async findAll(filters: {
@@ -135,15 +79,15 @@ export class DriveRepository {
             );
 
             return {
-                drives: listRes.rows.length > 0 ? listRes.rows : DEMO_DRIVES,
-                total: total > 0 ? total : DEMO_DRIVES.length,
+                drives: listRes.rows,
+                total,
                 page,
-                totalPages: Math.max(1, Math.ceil((total || DEMO_DRIVES.length) / limit))
+                totalPages: Math.max(1, Math.ceil(total / limit))
             };
         } catch {
             return {
-                drives: DEMO_DRIVES,
-                total: DEMO_DRIVES.length,
+                drives: [],
+                total: 0,
                 page: 1,
                 totalPages: 1
             };
@@ -151,7 +95,6 @@ export class DriveRepository {
     }
 
     static async findById(id: string): Promise<(PlacementDriveRecord & { company: CompanyRecord; session?: any }) | null> {
-        const demoMatch = DEMO_DRIVES.find((d) => d.id === id);
         try {
             const res = await query(
                 `SELECT pd.*,
@@ -163,13 +106,42 @@ export class DriveRepository {
                  WHERE pd.id = $1 LIMIT 1`,
                 [id]
             );
-            return res.rows[0] || demoMatch || null;
+            return res.rows[0] || null;
         } catch {
-            return demoMatch || null;
+            return null;
         }
     }
 
     static async create(data: Partial<PlacementDriveRecord>): Promise<PlacementDriveRecord> {
+        if (!data.company_id) throw new ApiError(400, "Company reference is required.");
+        if (!data.job_title?.trim()) throw new ApiError(400, "Job title is required.");
+        if (!data.job_type) throw new ApiError(400, "Job type is required.");
+        if (!data.graduation_year) throw new ApiError(400, "Graduation year cohort is required.");
+        if (!data.application_start_date) throw new ApiError(400, "Application start date is required.");
+        if (!data.application_deadline) throw new ApiError(400, "Application deadline is required.");
+        if (!data.drive_date) throw new ApiError(400, "Drive date is required.");
+
+        const start = new Date(data.application_start_date);
+        const deadline = new Date(data.application_deadline);
+        const driveDate = new Date(data.drive_date);
+
+        if (isNaN(start.getTime()) || isNaN(deadline.getTime()) || isNaN(driveDate.getTime())) {
+            throw new ApiError(400, "Invalid date format provided for drive schedule.");
+        }
+        if (deadline < start) {
+            throw new ApiError(400, "Application deadline cannot precede application start date.");
+        }
+        if (driveDate < deadline) {
+            throw new ApiError(400, "Drive execution date cannot precede application deadline.");
+        }
+
+        if (data.minimum_cgpa != null && (data.minimum_cgpa < 0 || data.minimum_cgpa > 10)) {
+            throw new ApiError(400, "Minimum CGPA must be between 0.00 and 10.00.");
+        }
+        if (data.maximum_backlogs != null && data.maximum_backlogs < 0) {
+            throw new ApiError(400, "Maximum backlogs cannot be negative.");
+        }
+
         const res = await query<PlacementDriveRecord>(
             `INSERT INTO placement_drives (
                 company_id, job_title, job_description, job_type, internship_type,
@@ -192,7 +164,7 @@ export class DriveRepository {
              RETURNING *`,
             [
                 data.company_id,
-                data.job_title,
+                data.job_title.trim(),
                 data.job_description || "",
                 data.job_type,
                 data.internship_type || "not_applicable",
@@ -236,6 +208,26 @@ export class DriveRepository {
     }
 
     static async update(id: string, updates: Partial<PlacementDriveRecord>): Promise<PlacementDriveRecord> {
+        // Enforce immutability of core targeting attributes once applications exist
+        if (
+            updates.graduation_year !== undefined ||
+            updates.company_id !== undefined ||
+            updates.placement_session_id !== undefined
+        ) {
+            const appCount = await query("SELECT COUNT(*) AS total FROM applications WHERE placement_drive_id = $1", [id]);
+            if (parseInt(appCount.rows[0]?.total || "0", 10) > 0) {
+                throw new ApiError(400, "Cannot change company, graduation cohort, or session on a drive with existing student applications.");
+            }
+        }
+
+        if (updates.application_start_date && updates.application_deadline) {
+            const start = new Date(updates.application_start_date);
+            const deadline = new Date(updates.application_deadline);
+            if (deadline < start) {
+                throw new ApiError(400, "Application deadline cannot precede application start date.");
+            }
+        }
+
         const setClauses: string[] = [];
         const values: any[] = [];
         let idx = 1;
@@ -278,6 +270,13 @@ export class DriveRepository {
     }
 
     static async delete(id: string): Promise<boolean> {
+        const appCount = await query("SELECT COUNT(*) AS total FROM applications WHERE placement_drive_id = $1", [id]);
+        if (parseInt(appCount.rows[0]?.total || "0", 10) > 0) {
+            throw new ApiError(
+                400,
+                "Cannot delete placement drive with existing student applications or interview history. Please cancel or archive the drive instead to preserve recruitment audit records."
+            );
+        }
         await query("DELETE FROM placement_drives WHERE id = $1", [id]);
         return true;
     }

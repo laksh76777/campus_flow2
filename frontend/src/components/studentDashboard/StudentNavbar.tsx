@@ -95,7 +95,7 @@ export default function StudentNavbar({
     try {
       await markAllNotificationsAsRead();
       setUnreadCount(0);
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true, is_read: true })));
       onRefreshNotifications?.();
     } catch (err) {
       console.error("Failed to mark all as read:", err);
@@ -108,7 +108,7 @@ export default function StudentNavbar({
       await markNotificationAsRead(id);
       setUnreadCount((prev) => Math.max(0, prev - 1));
       setNotifications((prev) =>
-        prev.map((n) => (n._id === id ? { ...n, isRead: true } : n))
+        prev.map((n) => ((n._id === id || n.id === id) ? { ...n, isRead: true, is_read: true } : n))
       );
       onRefreshNotifications?.();
     } catch (err) {
@@ -120,7 +120,7 @@ export default function StudentNavbar({
     e.stopPropagation();
     try {
       await deleteNotification(id);
-      setNotifications((prev) => prev.filter((n) => n._id !== id));
+      setNotifications((prev) => prev.filter((n) => n._id !== id && n.id !== id));
       setUnreadCount((prev) => Math.max(0, prev - 1));
       onRefreshNotifications?.();
     } catch (err) {
@@ -140,8 +140,10 @@ export default function StudentNavbar({
   };
 
   const handleNotificationClick = async (notification) => {
-    if (!notification.isRead) {
-      await handleMarkOneRead(notification._id, false);
+    const notifId = notification._id || notification.id;
+    const isRead = notification.isRead ?? notification.is_read;
+    if (!isRead && notifId) {
+      await handleMarkOneRead(notifId, false);
     }
     setShowNotifications(false);
     const titleLower = (notification.title || "").toLowerCase();
@@ -313,56 +315,60 @@ export default function StudentNavbar({
                     </p>
                   </div>
                 ) : (
-                  notifications.map((n) => (
-                    <div
-                      key={n._id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleNotificationClick(n)}
-                      onKeyDown={(e) => {
-                        if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
-                          e.preventDefault();
-                          handleNotificationClick(n);
-                        }
-                      }}
-                      className={`my-1 cursor-pointer rounded-xl border p-3 transition ${
-                        !n.isRead
-                          ? "border-brand-100 bg-brand-50/60 hover:bg-brand-50"
-                          : "border-transparent hover:bg-slate-50"
-                      }`}
-                    >
-                      <div className="flex items-start gap-2.5">
-                        {getStatusIcon(n.status)}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-start justify-between gap-1">
-                            <p
-                              className={`text-xs ${
-                                !n.isRead
-                                  ? "font-bold text-slate-900"
-                                  : "font-semibold text-slate-700"
-                              }`}
-                            >
-                              {n.title}
-                            </p>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span className="text-[10px] text-slate-400 whitespace-nowrap">
-                                {formatTimeAgo(n.createdAt)}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={(e) => handleDeleteOne(e, n._id)}
-                                className="rounded-md p-1 text-slate-300 transition hover:bg-rose-50 hover:text-rose-600"
-                                title="Delete notification"
-                                aria-label="Delete notification"
+                  notifications.map((n) => {
+                    const notifId = n._id || n.id;
+                    const isRead = n.isRead ?? n.is_read;
+                    const createdAt = n.createdAt || n.created_at;
+                    return (
+                      <div
+                        key={notifId}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => handleNotificationClick(n)}
+                        onKeyDown={(e) => {
+                          if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                            e.preventDefault();
+                            handleNotificationClick(n);
+                          }
+                        }}
+                        className={`my-1 cursor-pointer rounded-xl border p-3 transition ${
+                          !isRead
+                            ? "border-brand-100 bg-brand-50/60 hover:bg-brand-50"
+                            : "border-transparent hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          {getStatusIcon(n.status)}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-1">
+                              <p
+                                className={`text-xs ${
+                                  !isRead
+                                    ? "font-bold text-slate-900"
+                                    : "font-semibold text-slate-700"
+                                }`}
                               >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
+                                {n.title}
+                              </p>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="text-[10px] text-slate-400 whitespace-nowrap">
+                                  {formatTimeAgo(createdAt)}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleDeleteOne(e, notifId)}
+                                  className="rounded-md p-1 text-slate-300 transition hover:bg-rose-50 hover:text-rose-600"
+                                  title="Delete notification"
+                                  aria-label="Delete notification"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
 
-                          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                            {n.message}
-                          </p>
+                            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                              {n.message}
+                            </p>
 
                           {/* Extra Details (Interview / Package / Location) */}
                           {(n.interviewDate || n.offeredPackage || n.interviewLocation) && (
@@ -393,7 +399,8 @@ export default function StudentNavbar({
                         </div>
                       </div>
                     </div>
-                  ))
+                  );
+                })
                 )}
               </div>
 

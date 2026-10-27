@@ -64,21 +64,31 @@ export const applyToDrive = asyncHandler(async (req: Request, res: Response) => 
         appliedAt: new Date().toISOString()
     };
 
-    const application = await ApplicationRepository.create({
-        studentId: student.id,
-        placementDriveId: drive.id,
-        submittedSnapshot,
-        eligibilitySnapshot: (eligibility as any) || {},
-        customAnswers: req.body.customAnswers || []
-    });
+    let application;
+    try {
+        application = await ApplicationRepository.create({
+            studentId: student.id,
+            placementDriveId: drive.id,
+            submittedSnapshot,
+            eligibilitySnapshot: (eligibility as any) || {},
+            customAnswers: req.body.customAnswers || []
+        });
+    } catch (err: any) {
+        if (err?.code === "23505") {
+            throw new ApiError(409, "You have already submitted an application for this placement drive.");
+        }
+        throw err;
+    }
+
+    const companyName = drive.company?.company_name || (drive as any).company_name || "the recruiting company";
 
     // Notify student
     await NotificationRepository.create({
         user_id: req.user.id,
         title: "Application Submitted Successfully",
-        message: `Your application for ${drive.job_title} at ${drive.company.company_name} has been recorded.`,
+        message: `Your application for ${drive.job_title} at ${companyName} has been recorded.`,
         type: "application",
-        company_name: drive.company.company_name,
+        company_name: companyName,
         job_title: drive.job_title,
         application_id: application.id
     });
@@ -116,6 +126,11 @@ export const getApplicationById = asyncHandler(async (req: Request, res: Respons
     if (!application) {
         throw new ApiError(404, "Application not found.");
     }
+
+    if (req.user?.role === "student" && req.student && application.student_id !== req.student.id) {
+        throw new ApiError(403, "You are not authorized to view another student's application.");
+    }
+
     return res.status(200).json(new ApiResponse(200, application, "Application retrieved."));
 });
 
@@ -149,6 +164,11 @@ export const updateApplicationStatus = asyncHandler(async (req: Request, res: Re
         status,
         company_name: app.company_name,
         job_title: app.job_title,
+        remarks: remarks || "",
+        interview_date: interviewDate ? new Date(interviewDate).toISOString() : null,
+        interview_round: interviewRound || "",
+        interview_location: interviewLocation || "",
+        offered_package: offeredPackage != null ? Number(offeredPackage) : null,
         application_id: app.id
     });
 
@@ -178,7 +198,11 @@ export const respondToOffer = asyncHandler(async (req: Request, res: Response) =
         throw new ApiError(403, "You can only respond to your own offers.");
     }
 
-    const nextStatus = decision === "accepted" ? "offer_accepted" : "rejected";
+    if (!["offer_received", "selected"].includes(app.status)) {
+        throw new ApiError(400, "Cannot respond to offer unless application is in 'offer_received' or 'selected' status.");
+    }
+
+    const nextStatus = decision === "accepted" ? "offer_accepted" : "offer_declined";
     const updated = await ApplicationRepository.updateStatus(
         id,
         nextStatus,
@@ -217,6 +241,10 @@ export const withdrawApplication = asyncHandler(async (req: Request, res: Respon
 
     if (app.student_id !== student.id) {
         throw new ApiError(403, "You can only withdraw your own applications.");
+    }
+
+    if (["rejected", "withdrawn"].includes(app.status)) {
+        throw new ApiError(400, `Cannot withdraw an application that is already '${app.status}'.`);
     }
 
     const updated = await ApplicationRepository.withdraw(id, student.id);

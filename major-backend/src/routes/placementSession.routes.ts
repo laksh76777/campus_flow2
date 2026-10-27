@@ -10,7 +10,8 @@ import {
     archiveSession,
     previewSessionBackfill,
     executeSessionBackfill,
-    transferStudents
+    transferStudents,
+    deleteSession
 } from "../controllers/placementSession.controller.js";
 import { verifyJWT, verifyAdmin } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
@@ -31,6 +32,7 @@ router.patch("/:id", verifyAdmin, validate(updateSessionSchema), updateSession);
 router.patch("/:id/activate", verifyAdmin, activateSession);
 router.patch("/:id/close", verifyAdmin, closeSession);
 router.patch("/:id/archive", verifyAdmin, archiveSession);
+router.delete("/:id", verifyAdmin, deleteSession);
 
 // Cohort backfill & transfers
 router.post("/backfill/execute", verifyAdmin, executeSessionBackfill);

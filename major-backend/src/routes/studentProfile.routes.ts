@@ -21,7 +21,7 @@ import {
     safeMigrateProfiles,
     getStudentProfileById
 } from "../controllers/studentProfile.controller.js";
-import { verifyJWT, verifyStudent, verifyAdmin } from "../middlewares/auth.middleware.js";
+import { verifyJWT, verifyStudent, verifyAdmin, resolveStudentContext } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
 import { upload } from "../middlewares/upload.middleware.js";
 import { updateProfileSchema, requestModificationSchema } from "../schemas/student.schema.js";
@@ -37,7 +37,7 @@ router.patch("/update-profile", verifyStudent, validate(updateProfileSchema), up
 
 // 2. Profile Locking and Modification Requests
 router.post("/lock", verifyStudent, lockMyProfile);
-router.post("/lock-profile", lockMyProfile); // Allowed for student (self) or admin (with userId)
+router.post("/lock-profile", resolveStudentContext, lockMyProfile); // Allowed for student (self) or admin (with userId)
 router.post("/:studentId/unlock-profile", verifyAdmin, unlockStudentProfile);
 router.post("/request-modification", verifyStudent, validate(requestModificationSchema), requestProfileModification);
 router.get("/modification-requests", verifyAdmin, getModificationRequests);
@@ -50,8 +50,8 @@ router.delete("/delete-resume", verifyStudent, deleteResume);
 
 // 4. Academic Semester Results & Backlogs
 router.post("/semester-result", verifyStudent, addSemesterResult);
-router.post("/backlog-record", addBacklogRecord);
-router.delete("/backlog-record/:backlogId", deleteBacklogRecord);
+router.post("/backlog-record", resolveStudentContext, addBacklogRecord);
+router.delete("/backlog-record/:backlogId", resolveStudentContext, deleteBacklogRecord);
 
 // 5. Verification & Administrative Directory
 router.get("/all-students", verifyAdmin, getAllStudentProfiles);

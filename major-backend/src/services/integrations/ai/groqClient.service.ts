@@ -19,31 +19,46 @@ export const callGroqChat = async (options: {
 
     const model = options.model || env.GROQ_MODEL || "qwen/qwen3.8-27b";
 
+    // Sanitize and bound input messages
+    const sanitizedMessages = options.messages.map((m) => ({
+        role: m.role,
+        content: typeof m.content === "string" ? m.content.slice(0, 4000) : ""
+    }));
+
+    const maxTokens = Math.min(2000, Math.max(50, options.maxTokens ?? 1500));
     const body: Record<string, any> = {
         model,
-        messages: options.messages,
-        temperature: options.temperature ?? 0.3,
-        max_tokens: options.maxTokens ?? 1500
+        messages: sanitizedMessages,
+        temperature: Math.min(1.0, Math.max(0.0, options.temperature ?? 0.3)),
+        max_tokens: maxTokens
     };
 
     if (options.responseFormatJson) {
         body.response_format = { type: "json_object" };
     }
 
-    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(body)
-    });
+    try {
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${apiKey}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(10000)
+        });
 
-    if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Groq API returned HTTP ${res.status}: ${errorText}`);
+        if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(`Groq API returned HTTP ${res.status}: ${errorText.slice(0, 200)}`);
+        }
+
+        const data: any = await res.json();
+        return data?.choices?.[0]?.message?.content || "";
+    } catch (err: any) {
+        if (err.name === "TimeoutError" || err.message?.includes("timeout")) {
+            throw new Error("Groq API request timed out (10s threshold).");
+        }
+        throw err;
     }
-
-    const data: any = await res.json();
-    return data?.choices?.[0]?.message?.content || "";
 };

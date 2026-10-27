@@ -17,6 +17,50 @@ export class NotificationRepository {
         }
     }
 
+    static async findByUserPaged(
+        userId: string,
+        options: { page?: number; limit?: number; unreadOnly?: boolean } = {}
+    ): Promise<{ notifications: NotificationRecord[]; total: number; unreadCount: number }> {
+        const page = Math.max(1, options.page || 1);
+        const limit = Math.min(100, Math.max(1, options.limit || 50));
+        const offset = (page - 1) * limit;
+
+        const countRes = await query(
+            `SELECT COUNT(*)::int AS total,
+                    COUNT(*) FILTER (WHERE is_read = false)::int AS unread_count
+             FROM notifications
+             WHERE user_id = $1`,
+            [userId]
+        );
+        const total = countRes.rows[0]?.total || 0;
+        const unreadCount = countRes.rows[0]?.unread_count || 0;
+
+        const conditions = ["user_id = $1"];
+        const params: any[] = [userId];
+
+        if (options.unreadOnly) {
+            conditions.push("is_read = false");
+        }
+
+        const limitIdx = params.length + 1;
+        const offsetIdx = params.length + 2;
+        params.push(limit, offset);
+
+        const listRes = await query<NotificationRecord>(
+            `SELECT * FROM notifications
+             WHERE ${conditions.join(" AND ")}
+             ORDER BY created_at DESC
+             LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+            params
+        );
+
+        return {
+            notifications: listRes.rows,
+            total,
+            unreadCount
+        };
+    }
+
     static async create(data: Partial<NotificationRecord>): Promise<NotificationRecord> {
         const res = await query<NotificationRecord>(
             `INSERT INTO notifications (
@@ -46,18 +90,20 @@ export class NotificationRepository {
         return res.rows[0];
     }
 
-    static async markAsRead(id: string, userId: string): Promise<void> {
-        await query(
-            "UPDATE notifications SET is_read = true WHERE id = $1 AND user_id = $2",
+    static async markAsRead(id: string, userId: string): Promise<NotificationRecord | null> {
+        const res = await query<NotificationRecord>(
+            "UPDATE notifications SET is_read = true, updated_at = now() WHERE id = $1 AND user_id = $2 RETURNING *",
             [id, userId]
         );
+        return res.rows[0] || null;
     }
 
-    static async markAllAsRead(userId: string): Promise<void> {
-        await query(
-            "UPDATE notifications SET is_read = true WHERE user_id = $1 AND is_read = false",
+    static async markAllAsRead(userId: string): Promise<number> {
+        const res = await query(
+            "UPDATE notifications SET is_read = true, updated_at = now() WHERE user_id = $1 AND is_read = false",
             [userId]
         );
+        return (res as any).rowCount || 0;
     }
 
     static async deleteNotification(id: string, userId: string): Promise<void> {

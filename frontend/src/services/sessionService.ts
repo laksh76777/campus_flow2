@@ -78,3 +78,10 @@ export const transferStudentsSession = async ({
   });
   return response.data;
 };
+
+// 12. Delete placement session (Admin)
+export const deletePlacementSession = async (sessionId: string): Promise<ApiResponse<any>> => {
+  const response = await api.delete(`/sessions/${sessionId}`);
+  return response.data;
+};
+

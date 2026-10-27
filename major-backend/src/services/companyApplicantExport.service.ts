@@ -9,7 +9,12 @@ export class CompanyApplicantExportService {
         exportedBy: string,
         filters: { status?: string; branch?: string } = {}
     ): Promise<Buffer> {
-        const applications = await ApplicationRepository.findByDrive(driveId, filters);
+        const effectiveFilters: any = { ...filters };
+        if (!effectiveFilters.status || effectiveFilters.status === "all") {
+            // Documented reporting semantics: withdrawn candidates are excluded from corporate applicant rosters
+            effectiveFilters.excludeWithdrawn = true;
+        }
+        const applications = await ApplicationRepository.findByDrive(driveId, effectiveFilters);
 
         const workbook = new ExcelJS.Workbook();
         const sheet = workbook.addWorksheet("Candidates");

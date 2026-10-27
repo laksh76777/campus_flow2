@@ -20,7 +20,11 @@ export const createSession = asyncHandler(async (req: Request, res: Response) =>
 });
 
 export const getAllSessions = asyncHandler(async (req: Request, res: Response) => {
-    const sessions = await SessionRepository.findAll();
+    const { status, includeArchived } = req.query;
+    const sessions = await SessionRepository.findAll(
+        status ? String(status) : undefined,
+        includeArchived === "true"
+    );
     return res.status(200).json(new ApiResponse(200, sessions, "Placement sessions retrieved."));
 });
 
@@ -74,6 +78,15 @@ export const archiveSession = asyncHandler(async (req: Request, res: Response) =
 
     const updated = await SessionRepository.archive(id);
     return res.status(200).json(new ApiResponse(200, updated, "Placement session archived."));
+});
+
+export const deleteSession = asyncHandler(async (req: Request, res: Response) => {
+    const id = getParam(req.params.id);
+    const session = await SessionRepository.findById(id);
+    if (!session) throw new ApiError(404, "Placement session not found.");
+
+    await SessionRepository.delete(id);
+    return res.status(200).json(new ApiResponse(200, {}, "Placement session deleted successfully."));
 });
 
 export const previewSessionBackfill = asyncHandler(async (req: Request, res: Response) => {

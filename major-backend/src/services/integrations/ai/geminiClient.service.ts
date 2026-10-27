@@ -14,17 +14,25 @@ export const callGeminiPrompt = async (prompt: string, systemInstruction?: strin
     }
     contents.push({ role: "user", parts: [{ text: prompt }] });
 
-    const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ contents })
-    });
+    try {
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents }),
+            signal: AbortSignal.timeout(10000)
+        });
 
-    if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Gemini API returned HTTP ${res.status}: ${errorText}`);
+        if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(`Gemini API returned HTTP ${res.status}: ${errorText.slice(0, 200)}`);
+        }
+
+        const data: any = await res.json();
+        return data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    } catch (err: any) {
+        if (err.name === "TimeoutError" || err.message?.includes("timeout")) {
+            throw new Error("Gemini API request timed out (10s threshold).");
+        }
+        throw err;
     }
-
-    const data: any = await res.json();
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 };

@@ -85,7 +85,7 @@ app.get("/", async (req: Request, res: Response) => {
         .send(isReady ? "CampusFlow V3 Backend is running" : "CampusFlow V3 Backend database unavailable");
 });
 
-app.get("/health", async (req: Request, res: Response) => {
+const handleHealth = async (req: Request, res: Response) => {
     const health = await checkDatabaseHealth();
     const isReady = health.status === "connected";
     return res.status(isReady ? 200 : 503).json({
@@ -95,7 +95,10 @@ app.get("/health", async (req: Request, res: Response) => {
         provider: "Supabase PostgreSQL",
         timestamp: new Date().toISOString()
     });
-});
+};
+
+app.get("/health", handleHealth);
+app.get("/api/v1/health", handleHealth);
 
 app.get("/ready", async (req: Request, res: Response) => {
     const health = await checkDatabaseHealth();

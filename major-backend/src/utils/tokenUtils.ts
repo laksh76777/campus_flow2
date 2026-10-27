@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import { CookieOptions } from "express";
 import { env } from "../config/env.js";
 import { getSupabaseAdmin } from "../database/supabase.js";
@@ -26,7 +27,7 @@ export const generateAccessToken = (payload: TokenPayload): string => {
 };
 
 export const generateRefreshToken = (payload: { id: string }): string => {
-    return jwt.sign(payload, env.REFRESH_TOKEN_SECRET, {
+    return jwt.sign({ ...payload, jti: crypto.randomUUID() }, env.REFRESH_TOKEN_SECRET, {
         expiresIn: env.REFRESH_TOKEN_EXPIRY as any
     });
 };

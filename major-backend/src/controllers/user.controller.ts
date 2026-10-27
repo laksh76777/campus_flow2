@@ -40,8 +40,10 @@ export const registerStudent = asyncHandler(async (req: Request, res: Response) 
         phone
     } = req.body;
 
+    const cleanEmail = email.trim().toLowerCase();
+
     // Check existing email
-    const existingUser = await UserRepository.findByEmail(email);
+    const existingUser = await UserRepository.findByEmail(cleanEmail);
     if (existingUser) {
         throw new ApiError(409, "An account with this email address already exists.");
     }
@@ -206,6 +208,10 @@ export const loginUser = asyncHandler(async (req: Request, res: Response) => {
     }
 
     const user = record.user;
+    if (!user.is_active) {
+        throw new ApiError(403, "Your account has been deactivated. Please contact administrator.");
+    }
+
     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
     if (!isPasswordValid) {
         throw new ApiError(401, "Invalid email/USN or password.");
@@ -344,7 +350,10 @@ export const getCurrentUser = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
-    const { email } = req.body;
+    const email = req.body.email ? String(req.body.email).trim().toLowerCase() : "";
+    if (!email) {
+        throw new ApiError(400, "Email address is required.");
+    }
     const user = await UserRepository.findByEmail(email);
 
     if (!user) {
@@ -373,7 +382,11 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
 });
 
 export const verifyOtp = asyncHandler(async (req: Request, res: Response) => {
-    const { email, otp } = req.body;
+    const email = req.body.email ? String(req.body.email).trim().toLowerCase() : "";
+    const otp = req.body.otp ? String(req.body.otp).trim() : "";
+    if (!email || !otp) {
+        throw new ApiError(400, "Email and OTP code are required.");
+    }
     const challenge = await PasswordResetRepository.findPendingByEmail(email);
 
     if (!challenge) {

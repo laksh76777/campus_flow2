@@ -41,6 +41,9 @@ export const getSupportConversation = asyncHandler(async (req: Request, res: Res
     if (!conversation) {
         throw new ApiError(404, "Support conversation not found.");
     }
+    if (req.user.role === "student" && conversation.student_id !== req.user.id) {
+        throw new ApiError(403, "You are not authorized to access this support conversation.");
+    }
     return res.status(200).json(new ApiResponse(200, conversation, "Conversation retrieved."));
 });
 
@@ -52,6 +55,9 @@ export const sendStudentSupportMessage = asyncHandler(async (req: Request, res: 
     const conv = await SupportRepository.findById(conversationId);
     if (!conv) {
         throw new ApiError(404, "Support conversation not found.");
+    }
+    if (req.user.role === "student" && conv.student_id !== req.user.id) {
+        throw new ApiError(403, "You are not authorized to participate in this support conversation.");
     }
 
     // Add student message
@@ -75,6 +81,13 @@ export const sendStudentSupportMessage = asyncHandler(async (req: Request, res: 
 
 export const requestAdminReply = asyncHandler(async (req: Request, res: Response) => {
     const conversationId = getParam(req.params.conversationId);
+    const conv = await SupportRepository.findById(conversationId);
+    if (!conv) {
+        throw new ApiError(404, "Support conversation not found.");
+    }
+    if (req.user.role === "student" && conv.student_id !== req.user.id) {
+        throw new ApiError(403, "You are not authorized to update this support conversation.");
+    }
     const updated = await SupportRepository.updateStatus(conversationId, "open");
     return res.status(200).json(new ApiResponse(200, updated, "Handoff to placement officer requested."));
 });

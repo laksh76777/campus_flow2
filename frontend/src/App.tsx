@@ -176,6 +176,30 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/admin/sessions"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <AdminDashboard initialTab="sessions" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/excel-hub"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <AdminDashboard initialTab="excel_hub" />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/announcements"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <AdminDashboard initialTab="announcements" />
+            </ProtectedRoute>
+          }
+        />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

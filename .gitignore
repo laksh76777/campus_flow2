@@ -94,3 +94,12 @@ desktop.ini
 *.swo
 *.sublime-project
 *.sublime-workspace
+
+
+# 11. Database Snapshots & Backups
+backups/
+*/backups/
+*.dump
+*.sql.gz
+
+.csv

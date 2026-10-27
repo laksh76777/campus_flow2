@@ -1,5 +1,6 @@
 import { query } from "../database/db.js";
 import { StudentProfileRecord } from "../database/types.js";
+import { ApiError } from "../utils/ApiError.js";
 
 export const DEMO_STUDENT_PROFILE: any = {
     id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -43,62 +44,219 @@ export const DEMO_STUDENT_PROFILE: any = {
     updated_at: new Date("2026-01-01T00:00:00Z")
 };
 
+export function formatStudentResponse(row: any): any {
+    if (!row) return null;
+    const id = row.id;
+    const fullName = row.full_name || row.fullName || "";
+    const email = row.email || "";
+    const phone = row.user_phone || row.phone || "";
+    const avatarUrl = row.avatar_url || row.avatarUrl || null;
+    const resumeUrl = row.resume_url || row.resumeUrl || "";
+    const resumePublicId = row.resume_public_id || row.resumePublicId || "";
+
+    return {
+        ...row,
+        id,
+        _id: id,
+        userId: row.user_id,
+        fullName,
+        email,
+        phone,
+        avatarUrl,
+        user: {
+            id: row.user_id,
+            _id: row.user_id,
+            fullName,
+            email,
+            phone,
+            avatar: { url: avatarUrl },
+            avatarUrl
+        },
+        enrollmentNumber: row.enrollment_number,
+        enrollment_number: row.enrollment_number,
+        usn: row.usn,
+        branch: row.branch,
+        department: row.department,
+        course: row.course,
+        programCode: row.program_code,
+        program_code: row.program_code,
+        graduationYear: row.graduation_year,
+        graduation_year: row.graduation_year,
+        currentSemester: row.current_semester ?? row.semester,
+        current_semester: row.current_semester ?? row.semester,
+        semester: row.semester ?? row.current_semester,
+        section: row.section,
+        cgpa: row.cgpa !== null && row.cgpa !== undefined ? Number(row.cgpa) : null,
+        verifiedCGPA: row.verified_cgpa !== null && row.verified_cgpa !== undefined ? Number(row.verified_cgpa) : null,
+        verified_cgpa: row.verified_cgpa !== null && row.verified_cgpa !== undefined ? Number(row.verified_cgpa) : null,
+        backlogs: row.backlogs !== null && row.backlogs !== undefined ? Number(row.backlogs) : 0,
+        activeBacklogs: row.active_backlogs !== null && row.active_backlogs !== undefined ? Number(row.active_backlogs) : 0,
+        active_backlogs: row.active_backlogs !== null && row.active_backlogs !== undefined ? Number(row.active_backlogs) : 0,
+        historicalBacklogs: row.historical_backlogs !== null && row.historical_backlogs !== undefined ? Number(row.historical_backlogs) : 0,
+        historical_backlogs: row.historical_backlogs !== null && row.historical_backlogs !== undefined ? Number(row.historical_backlogs) : 0,
+        clearedBacklogsCount: Math.max(0, (Number(row.historical_backlogs) || 0) - (Number(row.active_backlogs) || 0)),
+        tenthDetails: row.tenth_details || {},
+        tenth_details: row.tenth_details || {},
+        tenthPercentage: row.tenth_percentage ?? row.tenth_details?.percentage,
+        tenth_percentage: row.tenth_percentage ?? row.tenth_details?.percentage,
+        twelfthOrDiplomaDetails: row.twelfth_or_diploma_details || {},
+        twelfth_or_diploma_details: row.twelfth_or_diploma_details || {},
+        twelfthPercentage: row.twelfth_percentage ?? row.twelfth_or_diploma_details?.percentage,
+        twelfth_percentage: row.twelfth_percentage ?? row.twelfth_or_diploma_details?.percentage,
+        hasEducationGap: row.has_education_gap ?? false,
+        has_education_gap: row.has_education_gap ?? false,
+        educationGaps: row.education_gaps || [],
+        education_gaps: row.education_gaps || [],
+        semesterResults: row.semester_results || [],
+        semester_results: row.semester_results || [],
+        backlogDetails: row.backlog_details || [],
+        backlog_details: row.backlog_details || [],
+        skills: Array.isArray(row.skills) ? row.skills : [],
+        certificates: Array.isArray(row.certificates) ? row.certificates : [],
+        about: row.about || "",
+        resumeUrl,
+        resume_url: resumeUrl,
+        resumePublicId,
+        resume_public_id: resumePublicId,
+        resume: {
+            url: resumeUrl,
+            publicId: resumePublicId
+        },
+        verificationStatus: row.verification_status || "PENDING",
+        verification_status: row.verification_status || "PENDING",
+        verificationRemarks: row.verification_remarks || "",
+        verification_remarks: row.verification_remarks || "",
+        profileCompleteness: row.profile_completeness ?? 0,
+        profile_completeness: row.profile_completeness ?? 0,
+        isPlaced: Boolean(row.is_placed),
+        is_placed: Boolean(row.is_placed),
+        placedCompany: row.placed_company || "",
+        placed_company: row.placed_company || "",
+        placedPackage: row.placed_package !== null && row.placed_package !== undefined ? Number(row.placed_package) : null,
+        placed_package: row.placed_package !== null && row.placed_package !== undefined ? Number(row.placed_package) : null,
+        isProfileLocked: Boolean(row.is_profile_locked),
+        is_profile_locked: Boolean(row.is_profile_locked),
+        modificationRequests: row.modification_requests || [],
+        modification_requests: row.modification_requests || [],
+        currentAddress: row.current_address || {},
+        current_address: row.current_address || {},
+        permanentAddress: row.permanent_address || {},
+        permanent_address: row.permanent_address || {},
+        family: row.family || {},
+        personalEmail: row.personal_email || "",
+        personal_email: row.personal_email || "",
+        collegeEmail: row.college_email || "",
+        college_email: row.college_email || ""
+    };
+}
+
 export class StudentRepository {
-    static async findById(id: string): Promise<(StudentProfileRecord & { full_name?: string; email?: string }) | null> {
-        if (id === DEMO_STUDENT_PROFILE.id) return DEMO_STUDENT_PROFILE;
+    static async findById(id: string): Promise<(StudentProfileRecord & { full_name?: string; email?: string; [key: string]: any }) | null> {
+        if (!id || typeof id !== "string") return null;
+        const clean = id.trim();
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
+
         try {
-            const res = await query(
-                `SELECT sp.*, u.full_name, u.email, u.phone AS user_phone, u.avatar_url
-                 FROM student_profiles sp
-                 JOIN users u ON u.id = sp.user_id
-                 WHERE sp.id = $1 LIMIT 1`,
-                [id]
-            );
-            return res.rows[0] || (id === DEMO_STUDENT_PROFILE.id ? DEMO_STUDENT_PROFILE : null);
+            if (isUUID) {
+                const res = await query(
+                    `SELECT sp.*, u.full_name, u.email, u.phone AS user_phone, u.avatar_url
+                     FROM student_profiles sp
+                     JOIN users u ON u.id = sp.user_id
+                     WHERE sp.id = $1 LIMIT 1`,
+                    [clean]
+                );
+                return res.rows[0] ? formatStudentResponse(res.rows[0]) : null;
+            } else {
+                return this.findByUSN(clean);
+            }
         } catch {
-            return id === DEMO_STUDENT_PROFILE.id ? DEMO_STUDENT_PROFILE : null;
+            return null;
         }
     }
 
-    static async findByUserId(userId: string): Promise<(StudentProfileRecord & { full_name?: string; email?: string }) | null> {
-        if (userId === DEMO_STUDENT_PROFILE.user_id) return DEMO_STUDENT_PROFILE;
+    static async findByIdOrUsn(identifier: string): Promise<(StudentProfileRecord & { full_name?: string; email?: string; [key: string]: any }) | null> {
+        if (!identifier || typeof identifier !== "string") return null;
+        const clean = identifier.trim();
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
+
+        try {
+            let res;
+            if (isUUID) {
+                res = await query(
+                    `SELECT sp.*, u.full_name, u.email, u.phone AS user_phone, u.avatar_url
+                     FROM student_profiles sp
+                     JOIN users u ON u.id = sp.user_id
+                     WHERE sp.id = $1 OR sp.user_id = $1
+                     LIMIT 1`,
+                    [clean]
+                );
+            } else {
+                res = await query(
+                    `SELECT sp.*, u.full_name, u.email, u.phone AS user_phone, u.avatar_url
+                     FROM student_profiles sp
+                     JOIN users u ON u.id = sp.user_id
+                     WHERE LOWER(TRIM(sp.usn)) = LOWER(TRIM($1))
+                        OR LOWER(TRIM(sp.enrollment_number)) = LOWER(TRIM($1))
+                     LIMIT 1`,
+                    [clean]
+                );
+            }
+            return res.rows[0] ? formatStudentResponse(res.rows[0]) : null;
+        } catch (err) {
+            console.error("Error in findByIdOrUsn:", err);
+            return null;
+        }
+    }
+
+    static async findByUserId(userId: string): Promise<(StudentProfileRecord & { full_name?: string; email?: string; [key: string]: any }) | null> {
+        if (!userId || typeof userId !== "string") return null;
         try {
             const res = await query(
                 `SELECT sp.*, u.full_name, u.email, u.phone AS user_phone, u.avatar_url
                  FROM student_profiles sp
                  JOIN users u ON u.id = sp.user_id
                  WHERE sp.user_id = $1 LIMIT 1`,
-                [userId]
+                [userId.trim()]
             );
-            return res.rows[0] || (userId === DEMO_STUDENT_PROFILE.user_id ? DEMO_STUDENT_PROFILE : null);
+            return res.rows[0] ? formatStudentResponse(res.rows[0]) : null;
         } catch {
-            return userId === DEMO_STUDENT_PROFILE.user_id ? DEMO_STUDENT_PROFILE : null;
+            return null;
         }
     }
 
-    static async findByUSN(usn: string): Promise<StudentProfileRecord | null> {
-        if (usn.trim().toUpperCase() === DEMO_STUDENT_PROFILE.usn) return DEMO_STUDENT_PROFILE;
+    static async findByUSN(usn: string): Promise<any | null> {
+        if (!usn || typeof usn !== "string") return null;
         try {
-            const res = await query<StudentProfileRecord>(
-                "SELECT * FROM student_profiles WHERE LOWER(usn) = LOWER($1) LIMIT 1",
+            const res = await query(
+                `SELECT sp.*, u.full_name, u.email, u.phone AS user_phone, u.avatar_url
+                 FROM student_profiles sp
+                 JOIN users u ON u.id = sp.user_id
+                 WHERE LOWER(TRIM(sp.usn)) = LOWER(TRIM($1))
+                    OR LOWER(TRIM(sp.enrollment_number)) = LOWER(TRIM($1))
+                 LIMIT 1`,
                 [usn.trim()]
             );
-            return res.rows[0] || (usn.trim().toUpperCase() === DEMO_STUDENT_PROFILE.usn ? DEMO_STUDENT_PROFILE : null);
+            return res.rows[0] ? formatStudentResponse(res.rows[0]) : null;
         } catch {
-            return usn.trim().toUpperCase() === DEMO_STUDENT_PROFILE.usn ? DEMO_STUDENT_PROFILE : null;
+            return null;
         }
     }
 
-    static async findByEnrollment(enrollmentNumber: string): Promise<StudentProfileRecord | null> {
-        if (enrollmentNumber.trim().toUpperCase() === DEMO_STUDENT_PROFILE.enrollment_number) return DEMO_STUDENT_PROFILE;
+    static async findByEnrollment(enrollmentNumber: string): Promise<any | null> {
+        if (!enrollmentNumber || typeof enrollmentNumber !== "string") return null;
         try {
-            const res = await query<StudentProfileRecord>(
-                "SELECT * FROM student_profiles WHERE LOWER(enrollment_number) = LOWER($1) LIMIT 1",
+            const res = await query(
+                `SELECT sp.*, u.full_name, u.email, u.phone AS user_phone, u.avatar_url
+                 FROM student_profiles sp
+                 JOIN users u ON u.id = sp.user_id
+                 WHERE LOWER(TRIM(sp.enrollment_number)) = LOWER(TRIM($1))
+                    OR LOWER(TRIM(sp.usn)) = LOWER(TRIM($1))
+                 LIMIT 1`,
                 [enrollmentNumber.trim()]
             );
-            return res.rows[0] || (enrollmentNumber.trim().toUpperCase() === DEMO_STUDENT_PROFILE.enrollment_number ? DEMO_STUDENT_PROFILE : null);
+            return res.rows[0] ? formatStudentResponse(res.rows[0]) : null;
         } catch {
-            return enrollmentNumber.trim().toUpperCase() === DEMO_STUDENT_PROFILE.enrollment_number ? DEMO_STUDENT_PROFILE : null;
+            return null;
         }
     }
 
@@ -115,28 +273,35 @@ export class StudentRepository {
         currentSemester?: number;
         placementSessionId?: string;
     }): Promise<StudentProfileRecord> {
-        const res = await query<StudentProfileRecord>(
-            `INSERT INTO student_profiles (
-                user_id, enrollment_number, usn, branch, department,
-                course, program_code, graduation_year, semester, current_semester, placement_session_id
-             )
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-             RETURNING *`,
-            [
-                data.userId,
-                data.enrollmentNumber.trim(),
-                data.usn ? data.usn.trim().toUpperCase() : null,
-                data.branch,
-                data.department || data.branch,
-                data.course || "B.E.",
-                data.programCode || null,
-                data.graduationYear,
-                data.semester,
-                data.currentSemester || data.semester,
-                data.placementSessionId || null
-            ]
-        );
-        return res.rows[0];
+        try {
+            const res = await query<StudentProfileRecord>(
+                `INSERT INTO student_profiles (
+                    user_id, enrollment_number, usn, branch, department,
+                    course, program_code, graduation_year, semester, current_semester, placement_session_id
+                 )
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                 RETURNING *`,
+                [
+                    data.userId,
+                    data.enrollmentNumber.trim(),
+                    data.usn ? data.usn.trim().toUpperCase() : null,
+                    data.branch,
+                    data.department || data.branch,
+                    data.course || "B.E.",
+                    data.programCode || null,
+                    data.graduationYear,
+                    data.semester,
+                    data.currentSemester || data.semester,
+                    data.placementSessionId || null
+                ]
+            );
+            return res.rows[0];
+        } catch (err: any) {
+            if (err?.code === "23505") {
+                throw new ApiError(409, "A student profile with this USN or enrollment number already exists.");
+            }
+            throw err;
+        }
     }
 
     static async updateProfile(id: string, updates: Partial<StudentProfileRecord>): Promise<StudentProfileRecord> {
@@ -154,14 +319,25 @@ export class StudentRepository {
             // Convert camelCase to snake_case for DB columns if necessary
             const snakeKey = key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
             setClauses.push(`${snakeKey} = $${idx}`);
-            values.push(val === undefined ? null : val);
+            if (val !== null && typeof val === "object" && !(val instanceof Date)) {
+                values.push(JSON.stringify(val));
+            } else {
+                values.push(val === undefined ? null : val);
+            }
             idx++;
         }
 
         values.push(id);
         const sql = `UPDATE student_profiles SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING *`;
-        const res = await query<StudentProfileRecord>(sql, values);
-        return res.rows[0];
+        try {
+            const res = await query<StudentProfileRecord>(sql, values);
+            return res.rows[0];
+        } catch (err: any) {
+            if (err?.code === "23505") {
+                throw new ApiError(409, "A student profile with this USN or enrollment number already exists.");
+            }
+            throw err;
+        }
     }
 
     static async setProfileLock(id: string, locked: boolean): Promise<StudentProfileRecord> {
@@ -219,6 +395,66 @@ export class StudentRepository {
             modification_requests: requests,
             is_profile_locked: isLocked
         });
+    }
+
+    static async getAllModificationRequests(): Promise<any[]> {
+        try {
+            const res = await query(`
+                SELECT 
+                    sp.id AS student_profile_id,
+                    sp.user_id,
+                    sp.usn,
+                    sp.enrollment_number,
+                    sp.branch,
+                    sp.department,
+                    u.full_name,
+                    u.email,
+                    u.phone,
+                    req.*
+                FROM student_profiles sp
+                JOIN users u ON u.id = sp.user_id,
+                jsonb_to_recordset(
+                    CASE 
+                        WHEN jsonb_typeof(sp.modification_requests) = 'array' THEN sp.modification_requests 
+                        ELSE '[]'::jsonb 
+                    END
+                ) AS req(
+                    id text,
+                    "requestedAt" text,
+                    status text,
+                    reason text,
+                    "fieldsToModify" text[],
+                    "reviewedAt" text,
+                    "reviewedByName" text,
+                    "rejectionReason" text
+                )
+                ORDER BY req."requestedAt" DESC
+            `);
+
+            return res.rows.map((row: any) => ({
+                id: row.id,
+                _id: row.id,
+                studentProfileId: row.student_profile_id,
+                userId: row.user_id,
+                usn: row.usn,
+                enrollmentNumber: row.enrollment_number,
+                fullName: row.full_name,
+                email: row.email,
+                phone: row.phone,
+                branch: row.branch,
+                department: row.department,
+                requestedAt: row.requestedAt,
+                status: row.status,
+                reason: row.reason,
+                fieldsToModify: row.fieldsToModify || [],
+                reviewedAt: row.reviewedAt,
+                reviewedByName: row.reviewedByName,
+                rejectionReason: row.rejectionReason
+            }));
+        } catch (err) {
+            console.error("Error retrieving modification requests:", err);
+            return [];
+        }
     }
 
     static async findAll(filters: {
@@ -286,55 +522,20 @@ export class StudentRepository {
             );
 
             return {
-                students: listRes.rows.length > 0 ? listRes.rows : [DEMO_STUDENT_PROFILE],
-                total: total > 0 ? total : 1,
+                students: listRes.rows.map(formatStudentResponse),
+                total,
                 page,
-                totalPages: Math.max(1, Math.ceil((total || 1) / limit))
+                totalPages: Math.max(1, Math.ceil(total / limit))
             };
-        } catch {
+        } catch (err) {
+            console.error("Error in StudentRepository.findAll:", err);
             return {
-                students: [DEMO_STUDENT_PROFILE],
-                total: 1,
+                students: [],
+                total: 0,
                 page: 1,
                 totalPages: 1
             };
         }
-    }
-
-    static async getAllModificationRequests(): Promise<any[]> {
-        const res = await query(
-            `SELECT sp.id AS student_id, sp.usn, sp.enrollment_number, sp.branch,
-                    u.full_name, u.email, sp.modification_requests
-             FROM student_profiles sp
-             JOIN users u ON u.id = sp.user_id
-             WHERE sp.modification_requests IS NOT NULL 
-               AND jsonb_array_length(sp.modification_requests) > 0
-             ORDER BY sp.updated_at DESC`
-        );
-
-        const flattened: any[] = [];
-        for (const row of res.rows) {
-            const reqs = Array.isArray(row.modification_requests) ? row.modification_requests : [];
-            for (const r of reqs) {
-                flattened.push({
-                    id: r.id || r._id,
-                    studentProfileId: row.student_id,
-                    studentId: row.student_id,
-                    studentName: row.full_name,
-                    usn: row.usn || row.enrollment_number,
-                    branch: row.branch,
-                    email: row.email,
-                    reason: r.reason,
-                    fieldsToModify: r.fieldsToModify || [],
-                    requestedAt: r.requestedAt,
-                    status: r.status || "PENDING",
-                    reviewedAt: r.reviewedAt,
-                    reviewedByName: r.reviewedByName,
-                    rejectionReason: r.rejectionReason
-                });
-            }
-        }
-        return flattened;
     }
 
     static async addSemesterResult(id: string, semesterData: any): Promise<StudentProfileRecord> {

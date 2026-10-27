@@ -16,9 +16,12 @@ export interface CriteriaBreakdownItem {
     passed: boolean;
 }
 
+export const CURRENT_RULE_VERSION = "2026.1";
+
 export interface EligibilityReport {
     status: EligibilityStatusType;
     isEligible: boolean;
+    ruleVersion: string;
     summary: string;
     reasons: string[];
     missingFields: string[];
@@ -31,6 +34,7 @@ export class EligibilityService {
             return {
                 status: EligibilityStatus.MISSING_DATA,
                 isEligible: false,
+                ruleVersion: CURRENT_RULE_VERSION,
                 summary: "Student profile does not exist",
                 reasons: ["Academic profile has not been created yet"],
                 missingFields: ["studentProfile"],
@@ -42,6 +46,7 @@ export class EligibilityService {
             return {
                 status: EligibilityStatus.INELIGIBLE,
                 isEligible: false,
+                ruleVersion: CURRENT_RULE_VERSION,
                 summary: "Placement drive not found",
                 reasons: ["Invalid or inactive placement drive"],
                 missingFields: [],
@@ -126,6 +131,7 @@ export class EligibilityService {
             return {
                 status: EligibilityStatus.MISSING_DATA,
                 isEligible: false,
+                ruleVersion: CURRENT_RULE_VERSION,
                 summary: "Cannot evaluate eligibility: Academic profile has missing required information",
                 reasons: missingFields.map((f) => `Missing ${f} in profile`),
                 missingFields,
@@ -214,17 +220,19 @@ export class EligibilityService {
         const shouldCheckCgpa = (drive.check_cgpa ?? drive.checkCgpa) !== false;
         const minCGPA = Number(drive.minimum_cgpa ?? drive.minimumCGPA) || 0;
         if (shouldCheckCgpa && minCGPA > 0) {
-            const cgpaPassed = (studentCGPA || 0) >= minCGPA;
+            const studentCgpaRounded = Math.round(((studentCGPA || 0) + Number.EPSILON) * 100) / 100;
+            const minCgpaRounded = Math.round((minCGPA + Number.EPSILON) * 100) / 100;
+            const cgpaPassed = studentCgpaRounded >= minCgpaRounded;
             criteriaBreakdown.push({
                 criterion: "CGPA Score",
-                required: `>= ${minCGPA.toFixed(2)}`,
-                actual: (studentCGPA || 0).toFixed(2),
+                required: `>= ${minCgpaRounded.toFixed(2)}`,
+                actual: studentCgpaRounded.toFixed(2),
                 passed: cgpaPassed
             });
 
             if (!cgpaPassed) {
                 failureReasons.push(
-                    `Current CGPA (${(studentCGPA || 0).toFixed(2)}) is below minimum required (${minCGPA.toFixed(2)})`
+                    `Current CGPA (${studentCgpaRounded.toFixed(2)}) is below minimum required (${minCgpaRounded.toFixed(2)})`
                 );
             }
         }
@@ -251,40 +259,55 @@ export class EligibilityService {
 
         // 8. 10th Cutoff
         if (requiresTenthCheck) {
-            const minTenth = Number(drive.minimum_tenth_percentage ?? drive.minimumTenthPercentage) || 0;
-            const tenthPassed = (studentTenth || 0) >= minTenth;
+            const minTenth = Math.round((Number(drive.minimum_tenth_percentage ?? drive.minimumTenthPercentage) || 0) * 100) / 100;
+            const actualTenth = Math.round(((studentTenth || 0) + Number.EPSILON) * 100) / 100;
+            const tenthPassed = actualTenth >= minTenth;
 
             criteriaBreakdown.push({
                 criterion: "10th Standard Cutoff",
                 required: `>= ${minTenth}%`,
-                actual: `${studentTenth || 0}%`,
+                actual: `${actualTenth}%`,
                 passed: tenthPassed
             });
 
             if (!tenthPassed) {
                 failureReasons.push(
-                    `10th percentage (${studentTenth || 0}%) is below minimum required (${minTenth}%)`
+                    `10th percentage (${actualTenth}%) is below minimum required (${minTenth}%)`
                 );
             }
         }
 
         // 9. 12th Cutoff
         if (requiresTwelfthCheck) {
-            const minTwelfth = Number(drive.minimum_twelfth_percentage ?? drive.minimumTwelfthPercentage) || 0;
-            const twelfthPassed = (studentTwelfth || 0) >= minTwelfth;
+            const minTwelfth = Math.round((Number(drive.minimum_twelfth_percentage ?? drive.minimumTwelfthPercentage) || 0) * 100) / 100;
+            const actualTwelfth = Math.round(((studentTwelfth || 0) + Number.EPSILON) * 100) / 100;
+            const twelfthPassed = actualTwelfth >= minTwelfth;
 
             criteriaBreakdown.push({
                 criterion: "12th / Diploma Cutoff",
                 required: `>= ${minTwelfth}%`,
-                actual: `${studentTwelfth || 0}%`,
+                actual: `${actualTwelfth}%`,
                 passed: twelfthPassed
             });
 
             if (!twelfthPassed) {
                 failureReasons.push(
-                    `12th / Diploma percentage (${studentTwelfth || 0}%) is below minimum required (${minTwelfth}%)`
+                    `12th / Diploma percentage (${actualTwelfth}%) is below minimum required (${minTwelfth}%)`
                 );
             }
+        }
+
+        // 9b. Placement Session Check
+        const driveSessionId = drive.placement_session_id || drive.placementSessionId;
+        const studentSessionId = student.placement_session_id || student.placementSessionId;
+        if (driveSessionId && studentSessionId && driveSessionId !== studentSessionId) {
+            criteriaBreakdown.push({
+                criterion: "Placement Session Cohort",
+                required: "Drive designated placement session",
+                actual: "Different placement session cohort",
+                passed: false
+            });
+            failureReasons.push("You are enrolled in a different placement session cohort than this drive");
         }
 
         // 10. Education Gaps
@@ -359,6 +382,7 @@ export class EligibilityService {
         return {
             status: isEligible ? EligibilityStatus.ELIGIBLE : EligibilityStatus.INELIGIBLE,
             isEligible,
+            ruleVersion: CURRENT_RULE_VERSION,
             summary: isEligible
                 ? "Eligible: Meets all academic, cohort, and document requirements"
                 : "Ineligible for this placement drive",
@@ -366,5 +390,16 @@ export class EligibilityService {
             missingFields: [],
             criteriaBreakdown
         };
+    }
+
+    static evaluateMany(students: any[], drive: any): Map<string, EligibilityReport> {
+        const results = new Map<string, EligibilityReport>();
+        for (const student of students) {
+            const key = student.id || student._id || student.usn;
+            if (key) {
+                results.set(key, this.evaluate(student, drive));
+            }
+        }
+        return results;
     }
 }

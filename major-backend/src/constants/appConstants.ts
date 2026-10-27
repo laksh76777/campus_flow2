@@ -23,16 +23,16 @@ export const DEFAULT_STUDENT_REQUIREMENTS = {
 };
 
 export const LEGAL_TRANSITIONS: Record<string, string[]> = {
-    applied: ["applied", "shortlisted", "interview", "selected", "offer_received", "offer_accepted", "rejected", "on_hold", "withdrawn"],
-    shortlisted: ["applied", "shortlisted", "interview", "selected", "offer_received", "offer_accepted", "rejected", "on_hold", "withdrawn"],
-    interview: ["interview", "shortlisted", "selected", "offer_received", "offer_accepted", "offer_declined", "rejected", "on_hold"],
-    on_hold: ["applied", "shortlisted", "interview", "selected", "offer_received", "offer_accepted", "rejected", "withdrawn"],
-    selected: ["selected", "offer_received", "offer_accepted", "offer_declined", "rejected", "interview", "shortlisted", "on_hold"],
-    offer_received: ["offer_received", "offer_accepted", "offer_declined", "rejected", "selected", "on_hold"],
-    offer_accepted: ["offer_accepted", "offer_declined", "rejected", "selected", "on_hold"],
-    offer_declined: ["offer_declined", "offer_accepted", "selected", "rejected", "on_hold"],
-    rejected: ["rejected", "shortlisted", "interview", "applied", "on_hold", "selected", "offer_accepted"],
-    withdrawn: ["applied"]
+    applied: ["shortlisted", "rejected", "on_hold", "withdrawn"],
+    shortlisted: ["interview", "rejected", "on_hold", "withdrawn"],
+    interview: ["interview", "selected", "offer_received", "rejected", "on_hold", "withdrawn"],
+    on_hold: ["shortlisted", "interview", "selected", "rejected", "withdrawn"],
+    selected: ["offer_received", "offer_accepted", "offer_declined", "withdrawn"],
+    offer_received: ["offer_accepted", "offer_declined", "withdrawn"],
+    offer_accepted: ["offer_declined", "withdrawn"],
+    offer_declined: ["withdrawn"],
+    rejected: ["applied"],
+    withdrawn: []
 };
 
 export const ELIGIBILITY_RULES_VERSION = 2;

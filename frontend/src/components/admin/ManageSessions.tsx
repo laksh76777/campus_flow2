@@ -18,7 +18,8 @@ import {
   Lock,
   Check,
   AlertTriangle,
-  Info
+  Info,
+  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -29,7 +30,8 @@ import {
   closePlacementSession,
   archivePlacementSession,
   previewSessionBackfill,
-  executeSessionBackfill
+  executeSessionBackfill,
+  deletePlacementSession,
 } from "../../services/sessionService";
 
 export default function ManageSessions({ onSessionChanged }) {
@@ -249,6 +251,20 @@ export default function ManageSessions({ onSessionChanged }) {
       if (onSessionChanged) onSessionChanged();
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to update session archive status");
+    }
+  };
+
+  const handleDeleteSession = async (sessionId, year) => {
+    if (!window.confirm(`Are you sure you want to permanently delete the placement session for Class of ${year}? Note: Sessions with existing drives or enrolled students cannot be deleted.`)) {
+      return;
+    }
+    try {
+      await deletePlacementSession(sessionId);
+      toast.success(`Placement session for Class of ${year} deleted successfully!`);
+      fetchSessions();
+      if (onSessionChanged) onSessionChanged();
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to delete placement session");
     }
   };
 
@@ -473,7 +489,7 @@ export default function ManageSessions({ onSessionChanged }) {
                   <div className="flex items-center gap-2">
                     {!isActive && !isArchived && (
                       <button
-                        onClick={() => handleActivate(sess._id, sess.sessionYear)}
+                        onClick={() => handleActivate(sess.id || sess._id, sess.sessionYear)}
                         className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 text-xs font-bold transition shadow-xs active:scale-95"
                       >
                         <Check className="h-3 w-3" />
@@ -483,7 +499,7 @@ export default function ManageSessions({ onSessionChanged }) {
 
                     {isActive && (
                       <button
-                        onClick={() => handleClose(sess._id, sess.sessionYear)}
+                        onClick={() => handleClose(sess.id || sess._id, sess.sessionYear)}
                         className="inline-flex items-center gap-1 rounded-xl bg-amber-500 hover:bg-amber-600 text-white px-2.5 py-1 text-xs font-bold transition shadow-xs"
                       >
                         <Lock className="h-3 w-3" />
@@ -492,11 +508,21 @@ export default function ManageSessions({ onSessionChanged }) {
                     )}
 
                     <button
-                      onClick={() => handleArchive(sess._id, isArchived)}
+                      onClick={() => handleArchive(sess.id || sess._id, isArchived)}
                       className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition"
                     >
                       {isArchived ? "Unarchive" : "Archive"}
                     </button>
+
+                    {!isActive && (
+                      <button
+                        onClick={() => handleDeleteSession(sess.id || sess._id, sess.sessionYear)}
+                        title="Delete placement session"
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

@@ -30,6 +30,7 @@ const envSchema = z.object({
     SMTP_SECURE: z.string().default("tls"),
     EMAIL_FROM: z.string().default("CampusFlow Notifications <notifications@campusflow.edu>"),
     FRONTEND_URL: z.string().default("http://localhost:5173"),
+    ENABLE_EMBEDDED_WORKER: z.string().optional().default("true"),
     GROQ_API_KEY: z.string().optional().default(""),
     GROQ_MODEL: z.string().default("qwen/qwen3.8-27b"),
     GEMINI_API_KEY: z.string().optional().default(""),
@@ -41,7 +42,44 @@ const parsed = envSchema.safeParse(process.env);
 
 if (!parsed.success) {
     console.error("Invalid environment variables:", parsed.error.format());
-    throw new Error("Invalid environment configuration");
+    throw new Error("Invalid environment configuration: Environment schema validation failed.");
+}
+
+// Fallback to generic JWT_SECRET if specific secrets were not explicitly provided
+const jwtFallback = process.env.JWT_SECRET?.trim();
+if (jwtFallback) {
+    if (parsed.data.ACCESS_TOKEN_SECRET === "default_access_secret_change_in_production_32char") {
+        parsed.data.ACCESS_TOKEN_SECRET = jwtFallback;
+    }
+    if (parsed.data.REFRESH_TOKEN_SECRET === "default_refresh_secret_change_in_production_32char") {
+        parsed.data.REFRESH_TOKEN_SECRET = jwtFallback;
+    }
+}
+
+// Production release validation guardrail
+if (parsed.data.NODE_ENV === "production") {
+    const missingSettings: string[] = [];
+    if (!parsed.data.SUPABASE_DATABASE_URL && !parsed.data.DATABASE_URL) {
+        missingSettings.push("SUPABASE_DATABASE_URL (or DATABASE_URL)");
+    }
+    if (
+        !parsed.data.ACCESS_TOKEN_SECRET ||
+        parsed.data.ACCESS_TOKEN_SECRET === "default_access_secret_change_in_production_32char"
+    ) {
+        missingSettings.push("ACCESS_TOKEN_SECRET (or JWT_SECRET must be set to a secure secret)");
+    }
+    if (
+        !parsed.data.REFRESH_TOKEN_SECRET ||
+        parsed.data.REFRESH_TOKEN_SECRET === "default_refresh_secret_change_in_production_32char"
+    ) {
+        missingSettings.push("REFRESH_TOKEN_SECRET (or JWT_SECRET must be set to a secure secret)");
+    }
+
+    if (missingSettings.length > 0) {
+        const errorMsg = `[FATAL] Production release startup failed. Essential environment variables missing or insecure: ${missingSettings.join(", ")}`;
+        console.error(errorMsg);
+        throw new Error(errorMsg);
+    }
 }
 
 export const env = parsed.data;

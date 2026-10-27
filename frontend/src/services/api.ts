@@ -41,9 +41,43 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+const normalizeData = (data: any): any => {
+  if (!data || typeof data !== "object") return data;
+  if (Array.isArray(data)) {
+    return data.map(normalizeData);
+  }
+  const normalized: Record<string, any> = { ...data };
+
+  // 1. Ensure id and _id parity
+  if (normalized.id !== undefined && normalized._id === undefined) {
+    normalized._id = normalized.id;
+  } else if (normalized._id !== undefined && normalized.id === undefined) {
+    normalized.id = normalized._id;
+  }
+
+  // 2. Map snake_case to camelCase aliases
+  for (const [key, val] of Object.entries(normalized)) {
+    if (key.includes("_") && !key.startsWith("_")) {
+      const camelKey = key.replace(/_([a-z0-9])/g, (_, letter) => letter.toUpperCase());
+      if (normalized[camelKey] === undefined) {
+        normalized[camelKey] = normalizeData(val);
+      }
+    } else if (typeof val === "object" && val !== null) {
+      normalized[key] = normalizeData(val);
+    }
+  }
+
+  return normalized;
+};
+
 // Response interceptor
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response.data && typeof response.data === "object") {
+      response.data = normalizeData(response.data);
+    }
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
     const requestUrl = originalRequest?.url || "";

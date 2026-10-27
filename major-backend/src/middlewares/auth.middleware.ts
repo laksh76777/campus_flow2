@@ -75,3 +75,14 @@ export const verifyAdmin = asyncHandler(async (req: Request, res: Response, next
     req.admin = admin;
     next();
 });
+
+export const resolveStudentContext = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+    if (req.user?.role === "student" && !req.student) {
+        const profile = await StudentRepository.findByUserId(req.user.id);
+        if (profile) {
+            req.student = profile;
+        }
+    }
+    next();
+});
+

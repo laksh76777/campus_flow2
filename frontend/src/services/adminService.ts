@@ -36,6 +36,12 @@ export const reactivateCompany = async (companyId: string): Promise<ApiResponse<
   return response.data;
 };
 
+export const deleteCompany = async (companyId: string): Promise<ApiResponse<any>> => {
+  const response = await api.delete(`/company/${companyId}`);
+  return response.data;
+};
+
+
 // 3. Placement Drive Management
 export const getAllPlacementDrives = async (params: Record<string, any> = {}): Promise<ApiResponse<PlacementDrive[]>> => {
   const response = await api.get("/placementdrive/all-drives", { params });

@@ -17,12 +17,20 @@ const startServer = async () => {
         console.warn("The server will continue running. Update SUPABASE_DATABASE_URL or Supabase credentials in .env to connect.");
     }
 
-    // Start background reminder worker (60-second polling cycle)
-    ReminderSchedulerService.startWorker(60000);
+    // Validate email integration safely without exposing credentials
+    const { validateEmailConfigOnStartup } = await import("./services/integrations/email/mail.service.js");
+    validateEmailConfigOnStartup();
 
-    const server = app.listen(PORT, () => {
-        console.log(`CampusFlow V3 REST API running on http://localhost:${PORT}`);
-        console.log(`Health Check: http://localhost:${PORT}/health`);
+    // Start background reminder worker only if enabled (default true for local/single-service setups)
+    if (env.ENABLE_EMBEDDED_WORKER !== "false") {
+        ReminderSchedulerService.startWorker(60000);
+    } else {
+        console.log("[SERVER] Embedded reminder worker disabled (running via external worker).");
+    }
+
+    const server = app.listen(PORT, "0.0.0.0", () => {
+        console.log(`CampusFlow V3 REST API running on http://0.0.0.0:${PORT}`);
+        console.log(`Health Check: http://0.0.0.0:${PORT}/health`);
     });
 
     // Graceful Shutdown

@@ -80,6 +80,7 @@ export interface Company {
 export interface EligibilityResult {
   status: "ELIGIBLE" | "INELIGIBLE" | "MISSING_DATA";
   isEligible: boolean;
+  ruleVersion?: string;
   summary: string;
   reasons: string[];
   missingFields: string[];

@@ -1,0 +1,90 @@
+name: CampusFlow Continuous Integration & Quality Gates
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend Quality & Production Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Run Production Bundle Build (Vite)
+        run: npm run build
+        env:
+          VITE_API_URL: https://campusflow-api.onrender.com/api/v1
+          VITE_SUPABASE_URL: https://mock-supabase.supabase.co
+          VITE_SUPABASE_ANON_KEY: mock-anon-key
+
+  backend:
+    name: Backend Quality, Typecheck & Deterministic Unit Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: major-backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20 LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: major-backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Run TypeScript Compilation
+        run: npm run build
+
+      - name: Run TypeScript typecheck
+        run: npm run typecheck
+
+      - name: Verify Migration Files Integrity
+        run: |
+          node -e "
+            import fs from 'fs';
+            import path from 'path';
+            const dir = './migrations';
+            const files = fs.readdirSync(dir).filter(f => f.endsWith('.sql'));
+            if (files.length === 0) throw new Error('No SQL migrations found!');
+            console.log('Discovered ' + files.length + ' migration file(s) cleanly formatted.');
+          "
+
+      - name: Run Pure Unit & Security Sanity Suites
+        run: |
+          node --test tests/programCatalog.test.js tests/formulaSanitization.test.js tests/reminderLifecycle.test.js
+        env:
+          NODE_ENV: test

@@ -21,6 +21,10 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true
+      - key: ACCESS_TOKEN_SECRET
+        generateValue: true
+      - key: REFRESH_TOKEN_SECRET
+        generateValue: true
       - key: FRONTEND_URL
         sync: false
       - key: CORS_ORIGIN
@@ -41,6 +45,8 @@ services:
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      - key: ENABLE_EMBEDDED_WORKER
+        value: "false"
     healthCheckPath: /api/v1/health
 
   # 2. Dedicated Idempotent Background Reminder Worker
@@ -49,7 +55,7 @@ services:
     runtime: node
     rootDir: major-backend
     buildCommand: npm install && npm run build
-    startCommand: node dist/server.js
+    startCommand: npm run worker
     envVars:
       - key: NODE_ENV
         value: production
@@ -58,4 +64,8 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: CampusFlow Placements <onboarding@resend.dev>
+      - key: FRONTEND_URL
         sync: false
